@@ -4,7 +4,7 @@
 //   "pbkdf2-sha256$<iteraciones>$<hash hex>"; la sal va en hex en otra columna.
 // - Sesiones: el navegador guarda un token aleatorio; la base guarda solo su
 //   SHA-256, así una copia de la base no permite suplantar sesiones.
-// - Límite de intentos: con 2 fallos del mismo usuario e IP en los últimos 15
+// - Límite de intentos: con 5 fallos del mismo usuario e IP en los últimos 15
 //   minutos, el login queda bloqueado hasta que se cumplan esos 15 minutos.
 // - Flujo en dos pasos: si el administrador tiene totp_enabled, la sesión nace con
 //   second_factor_passed = 0 y debe pasar por /admin/login/2fa (pendiente: etapa 7).
@@ -13,7 +13,7 @@ import type { Db } from "./db.ts";
 
 export const PBKDF2_ITERATIONS = 100_000; // máximo que admite Web Crypto en Workers
 export const SESSION_HOURS = 12;
-export const MAX_FAILED_ATTEMPTS = 2;
+export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCK_MINUTES = 15;
 export const MIN_PASSWORD_LENGTH = 10;
 

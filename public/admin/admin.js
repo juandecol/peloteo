@@ -240,7 +240,7 @@
     const s = S.session || {};
     return '<div class="card"><h2>Acceso del administrador</h2><dl class="kv"><dt>Usuario</dt><dd>' + esc(s.username) + '</dd>' +
       '<dt>Primer factor</dt><dd>Usuario y contraseña <span class="tag ok">Activo</span></dd><dt>Segundo factor</dt><dd>Código de 6 dígitos (app autenticadora) <span class="tag">' + (s.totp_enabled ? 'Activo' : 'Preparado, sin activar') + '</span></dd></dl>' +
-      '<p class="small muted">El inicio de sesión ya está pensado en dos pasos: hoy el segundo se omite. Después de 2 intentos fallidos, el acceso se bloquea 15 minutos.</p></div>' +
+      '<p class="small muted">El inicio de sesión ya está pensado en dos pasos: hoy el segundo se omite. Después de 5 intentos fallidos, el acceso se bloquea 15 minutos.</p></div>' +
       '<div class="card"><h2>Cambiar contraseña</h2><form data-f="password" novalidate>' + passwordFields(true) + errBox() +
       '<div class="actions"><button class="btn" type="submit">Guardar contraseña</button></div></form></div>' +
       '<div class="card"><h2>Jugadores</h2><p class="small muted">Sin registro. Cada navegador recibe un identificador anónimo (cookie) para reconocer sus partidos.</p></div>';

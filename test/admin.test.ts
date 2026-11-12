@@ -116,10 +116,19 @@ test("login: credenciales incorrectas responden igual para usuario inexistente",
   assert.equal(a.setCookie, null);
 });
 
-test("login: tras 2 intentos fallidos se bloquea 15 minutos, aun con la contraseña correcta", async () => {
+test("login: con 4 intentos fallidos todavía se puede entrar", async () => {
   const t = setup();
-  await t.req("POST", "/admin/login", { username: "admin", password: "x1" });
-  await t.req("POST", "/admin/login", { username: "admin", password: "x2" });
+  for (let i = 1; i <= 4; i++) {
+    assert.equal((await t.req("POST", "/admin/login", { username: "admin", password: "x" + i })).status, 401);
+  }
+  assert.equal((await t.req("POST", "/admin/login", { username: "admin", password: "admin" })).status, 200);
+});
+
+test("login: tras 5 intentos fallidos se bloquea 15 minutos, aun con la contraseña correcta", async () => {
+  const t = setup();
+  for (let i = 1; i <= 5; i++) {
+    assert.equal((await t.req("POST", "/admin/login", { username: "admin", password: "x" + i })).status, 401);
+  }
   const blocked = await t.req("POST", "/admin/login", { username: "admin", password: "admin" });
   assert.equal(blocked.status, 429);
   assert.match(blocked.json.error, /15 minutos/);

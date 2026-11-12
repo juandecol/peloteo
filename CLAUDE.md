@@ -79,7 +79,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 - Login de un factor: usuario y contraseña. Contraseña con hash PBKDF2 (Web Crypto) y sal por usuario. Nunca en texto plano ni en el código.
 - Usuario inicial `admin` / `admin`, creado por la migración con `must_change_password` activo: el sistema obliga a cambiarla en el primer ingreso.
-- Sesión en cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con expiración. Límite de 2 intentos fallidos; al superarlo se bloquea el login de ese usuario e IP por 15 minutos (duración provisional), registrado en `login_attempts`.
+- Sesión en cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con expiración. Límite de 5 intentos fallidos; al llegar a 5 se bloquea el login de ese usuario e IP por 15 minutos, registrado en `login_attempts`.
 - **Preparado para 2FA:** el login ya es un flujo de dos pasos (`/login` y `/login/2fa`). Mientras `totp_enabled` sea falso, el segundo paso se omite. No implementar TOTP todavía, pero no cerrar el diseño.
 - Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`).
 - Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
@@ -193,14 +193,13 @@ Marcar aquí la respuesta cuando se defina:
 - ¿Los clubes reservan canchas por otros canales? Si es así, definir cómo se bloquean esos horarios.
 - ¿Cuánto tiempo antes puede cancelarse un cupo? (Supuesto actual: hasta la hora de inicio.)
 - Proveedor de correo y dominio definitivo.
-- Duración del bloqueo tras 2 intentos fallidos de login (supuesto actual: 15 minutos).
 - PBKDF2 con 100.000 iteraciones podría superar el límite de CPU del plan gratuito de Workers (10 ms por solicitud) en el login. Verificar al desplegar; si falla, bajar las iteraciones (el formato del hash las guarda, así que se puede migrar sin perder la contraseña).
 
 Decididas (2026-11-12):
 
 - Anticipación máxima: 15 días.
 - `cancelado` es exclusivo del administrador; los encuentros cancelados se conservan.
-- Login del administrador: máximo 2 intentos fallidos, registrados en `login_attempts`.
+- Login del administrador: 5 intentos fallidos por usuario e IP; luego, espera de 15 minutos (actualizado; antes eran 2). Registrados en `login_attempts`.
 - `days`: 0 = domingo a 6 = sábado, texto separado por comas.
 - Avisos antes de la etapa 5: `notify()` con un canal que solo registra.
 - Cada cancha pertenece a un solo deporte.
