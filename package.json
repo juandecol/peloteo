@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "test": "node --test test/",
     "db:migrate": "wrangler d1 migrations apply peloteo --local",
     "types": "wrangler types",
     "check": "wrangler types && tsc --noEmit"

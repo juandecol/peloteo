@@ -1,0 +1,135 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  courtSlots,
+  dayAvailability,
+  getDayAvailability,
+  getMonthSummary,
+  parseDays,
+  type Court,
+  type PublicGame,
+} from "../src/lib/availability.ts";
+import { emptyGamesDb } from "./helpers/db.ts";
+
+const court = (over: Partial<Court> = {}): Court => ({
+  id: "C-AAAAA",
+  name: "Cancha 1",
+  status: "operativa",
+  open_time: "08:00",
+  close_time: "21:00",
+  slot_minutes: 60,
+  days: "0,1,2,3,4,5,6",
+  available_from: null,
+  available_to: null,
+  ...over,
+});
+
+const game = (over: Partial<PublicGame> = {}): PublicGame => ({
+  id: "E-AAAAA",
+  date: "2026-11-17",
+  time: "18:00",
+  court_id: "C-AAAAA",
+  capacity: 2,
+  status: "abierto",
+  players: [{ initials: "MT", level: 3 }],
+  missing: 1,
+  mine: false,
+  ...over,
+});
+
+const now = { date: "2026-11-16", minutes: 10 * 60 }; // lunes 10:00
+
+test("turnos de 60 minutos: el último termina justo al cierre", () => {
+  const slots = courtSlots(court(), "2026-11-17");
+  assert.equal(slots[0], "08:00");
+  assert.equal(slots.at(-1), "20:00");
+  assert.equal(slots.length, 13);
+});
+
+test("turnos de 90 minutos: no se genera un turno que termine después del cierre", () => {
+  const slots = courtSlots(court({ slot_minutes: 90 }), "2026-11-17");
+  assert.deepEqual(slots, ["08:00", "09:30", "11:00", "12:30", "14:00", "15:30", "17:00", "18:30"]);
+});
+
+test("turnos de 120 minutos", () => {
+  assert.deepEqual(courtSlots(court({ slot_minutes: 120, open_time: "09:00", close_time: "14:00" }), "2026-11-17"), [
+    "09:00",
+    "11:00",
+  ]);
+});
+
+test("canchas en mantención o cerradas no generan turnos", () => {
+  assert.deepEqual(courtSlots(court({ status: "mantencion" }), "2026-11-17"), []);
+  assert.deepEqual(courtSlots(court({ status: "cerrada" }), "2026-11-17"), []);
+});
+
+test("solo en los días de operación (0 = domingo)", () => {
+  const weekdays = court({ days: "1,2,3,4,5" });
+  assert.equal(courtSlots(weekdays, "2026-11-15").length, 0); // domingo
+  assert.equal(courtSlots(weekdays, "2026-11-16").length, 13); // lunes
+  assert.deepEqual(parseDays(" 1, 3,x,9,6"), [1, 3, 6]);
+});
+
+test("solo dentro del rango de fechas de la cancha", () => {
+  const c = court({ available_from: "2026-11-20", available_to: "2026-11-25" });
+  assert.equal(courtSlots(c, "2026-11-19").length, 0);
+  assert.equal(courtSlots(c, "2026-11-20").length, 13);
+  assert.equal(courtSlots(c, "2026-11-25").length, 13);
+  assert.equal(courtSlots(c, "2026-11-26").length, 0);
+});
+
+test("día: cuenta canchas libres y muestra encuentros abiertos", () => {
+  const courts = [court({ id: "C-1" }), court({ id: "C-2", name: "Cancha 2" })];
+  const slots = dayAvailability(courts, [game({ court_id: "C-1" })], "2026-11-17", now);
+  const s18 = slots.find((s) => s.time === "18:00")!;
+  assert.equal(s18.free_courts, 1);
+  assert.equal(s18.open_games.length, 1);
+  assert.equal(s18.full, false);
+  assert.equal(slots.find((s) => s.time === "08:00")!.free_courts, 2);
+});
+
+test("día: un turno sin canchas libres ni encuentros abiertos queda completo", () => {
+  const courts = [court({ id: "C-1" })];
+  const confirmed = game({ court_id: "C-1", status: "confirmado", missing: 0 });
+  const s18 = dayAvailability(courts, [confirmed], "2026-11-17", now).find((s) => s.time === "18:00")!;
+  assert.equal(s18.free_courts, 0);
+  assert.equal(s18.open_games.length, 0);
+  assert.equal(s18.full, true);
+});
+
+test("día: hoy se omiten los turnos con más de 15 minutos de iniciados", () => {
+  const at = { date: "2026-11-16", minutes: 9 * 60 + 15 }; // 09:15
+  const times = dayAvailability([court()], [], "2026-11-16", at).map((s) => s.time);
+  assert.equal(times[0], "09:00");
+  assert.ok(!times.includes("08:00"));
+  const later = { date: "2026-11-16", minutes: 9 * 60 + 16 };
+  assert.equal(dayAvailability([court()], [], "2026-11-16", later)[0]!.time, "10:00");
+});
+
+test("día: fuera del rango agendable no hay turnos", () => {
+  assert.deepEqual(dayAvailability([court()], [], "2026-12-02", now), []);
+  assert.deepEqual(dayAvailability([court()], [], "2026-11-15", now), []);
+});
+
+test("datos de ejemplo: tenis en Santa Martina usa 2 canchas (la 3 está en mantención)", async () => {
+  const db = emptyGamesDb();
+  const slots = await getDayAvailability(db, "D-TEN01", "2026-11-17", now);
+  assert.equal(slots.length, 13);
+  assert.ok(slots.every((s) => s.free_courts === 2));
+});
+
+test("resumen del mes: solo días agendables y marca los que tienen encuentros abiertos", async () => {
+  const db = emptyGamesDb();
+  db.exec(`INSERT INTO games (id, venue_id, sport_id, court_id, date, time, capacity)
+           VALUES ('E-AAAAA', 'L-SM001', 'D-TEN01', 'C-T1SM1', '2026-11-20', '18:00', 2);
+           INSERT INTO players (id, game_id, visitor_id, initials, level, email, cancel_token)
+           VALUES ('J-AAAAA', 'E-AAAAA', 'V-1', 'MT', 3, 'mt@example.com', 'aaaa');`);
+  const nov = await getMonthSummary(db, "D-TEN01", "2026-11", now);
+  assert.equal(nov[0]!.date, "2026-11-16");
+  assert.equal(nov.at(-1)!.date, "2026-11-30");
+  assert.equal(nov.find((d) => d.date === "2026-11-20")!.open_games, 1);
+  assert.equal(nov.find((d) => d.date === "2026-11-21")!.open_games, 0);
+  assert.ok(nov.every((d) => d.available));
+  const dec = await getMonthSummary(db, "D-TEN01", "2026-12", now);
+  assert.deepEqual(dec.map((d) => d.date), ["2026-12-01"]);
+});

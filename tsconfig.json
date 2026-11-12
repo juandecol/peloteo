@@ -9,7 +9,9 @@
     "noUncheckedIndexedAccess": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "worker-configuration.d.ts"]
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
 }

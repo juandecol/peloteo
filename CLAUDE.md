@@ -134,8 +134,12 @@ Terminar y probar cada etapa antes de empezar la siguiente. Un commit por cambio
 npm install          # dependencias (wrangler, hono, typescript)
 npm run db:migrate   # aplica migrations/ a la base D1 local (.wrangler/state)
 npm run dev          # wrangler dev en http://localhost:8787
+npm test             # pruebas de la lógica de negocio (node --test)
 npm run check        # genera tipos (wrangler types) y revisa con tsc
 ```
+
+- Las pruebas usan el runner de Node (`node --test`) y SQLite incorporado (`node:sqlite`), sin dependencias extra. `test/helpers/db.ts` imita la API de D1 (incluido `batch` transaccional) y aplica las migraciones reales.
+- Los imports entre archivos TypeScript llevan extensión `.ts` para que Node los ejecute directamente. `tsc` revisa `src/`; las pruebas no se revisan con `tsc` (no hay tipos de Node instalados).
 
 - La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`.
 - Despliegue: `npx wrangler deploy`. Dirección pública: https://peloteo.peloteo.workers.dev
@@ -148,6 +152,16 @@ Convenciones fijadas en la etapa 1:
 - Prefijos adicionales de ID: `J-` para cupos de jugadores (`players`), `A-` para administradores.
 - `password_hash` guarda `pbkdf2-sha256$<iteraciones>$<hash hex>` (100.000 iteraciones, el máximo que admite Web Crypto en Workers); `password_salt` en hex.
 - `created_at` en UTC (ISO 8601); `date` y `time` de los encuentros en hora local de Chile.
+
+Lógica de la etapa 2 (`src/lib/`):
+
+- `time.ts`: hora local de Chile, rango agendable (hoy + 15) y margen de 15 minutos.
+- `availability.ts`: turnos por cancha, disponibilidad del día y resumen del mes.
+- `matching.ts`: abrir partido, unirse, cancelar (por visitante o por token) y búsqueda. Cada escritura es un solo `db.batch()` con condiciones en SQL; los errores son `MatchError` con un `code` y un mensaje para la interfaz. Las funciones no llaman a `notify()`: devuelven `notices` (evento y jugadores) para que la ruta los envíe.
+- La primera cancha libre se elige por nombre y luego por ID.
+- Los jugadores de un encuentro se ordenan por orden de llegada (`rowid`).
+- Cancelar un cupo solo se permite antes de la hora de inicio (supuesto; ver Decisiones pendientes).
+- "Cupo cancelado" se avisa al resto solo cuando un encuentro confirmado vuelve a abierto, como dice la regla.
 
 ## Forma de trabajo
 
@@ -164,7 +178,7 @@ Marcar aquí la respuesta cuando se defina:
 - ¿La cancha se retiene al abrir el partido (supuesto actual) o solo al confirmarse?
 - ¿Se restringe unirse según diferencia de nivel?
 - ¿Los clubes reservan canchas por otros canales? Si es así, definir cómo se bloquean esos horarios.
-- ¿Cuánto tiempo antes puede cancelarse un cupo?
+- ¿Cuánto tiempo antes puede cancelarse un cupo? (Supuesto actual: hasta la hora de inicio.)
 - Proveedor de correo y dominio definitivo.
 - Duración del bloqueo tras 2 intentos fallidos de login (supuesto actual: 15 minutos).
 
