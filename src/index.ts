@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { adminRoutes, type AppBindings, type AppOptions } from "./admin.ts";
+import { publicRoutes } from "./public.ts";
 
 // Punto de entrada del Worker. createApp() permite inyectar un reloj en las pruebas.
 export function createApp(options: AppOptions = {}) {
@@ -16,6 +17,7 @@ export function createApp(options: AppOptions = {}) {
     return c.json({ ok: true, counts });
   });
 
+  app.route("/api", publicRoutes(options));
   app.route("/admin", adminRoutes(options));
 
   // Pantallas de configuración (archivos estáticos en public/admin/).

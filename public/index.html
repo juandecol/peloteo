@@ -3,44 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Peloteo</title>
-<style>
-:root{
-  --bg:#EDF2EC; --surface:#FFFFFF; --ink:#14251D; --muted:#5A6B61; --line:#C9D5CB;
-  --court:#1E6B4F; --court-ink:#FFFFFF; --ball:#D7E845;
-}
-@media (prefers-color-scheme: dark){
-  :root{color-scheme:dark;
-    --bg:#0E1814; --surface:#16241E; --ink:#E8F0EA; --muted:#94A79C; --line:#2A3D33;
-    --court:#2C8A66;}
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
-header{background:var(--court);color:var(--court-ink);padding:1rem}
-header strong{font-size:1.25rem}
-main{max-width:34rem;margin:0 auto;padding:1rem}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:1rem}
-.muted{color:var(--muted)}
-code{font-size:.95em}
-</style>
+<title>Peloteo, agenda de partidos</title>
+<meta name="description" content="Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.">
+<meta name="theme-color" content="#1E6B4F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<header><strong>Peloteo</strong></header>
-<main>
-  <div class="card">
-    <h1>Peloteo, muy pronto</h1>
-    <p class="muted">Etapa 1: estructura, Worker y base de datos.</p>
-    <p id="estado" class="muted">Revisando la base de datos…</p>
-  </div>
-</main>
-<script>
-fetch('/api/health').then(r=>r.json()).then(d=>{
-  const c=d.counts||{};
-  document.getElementById('estado').textContent=d.ok
-    ?'Base de datos lista: '+c.venues+' lugares, '+c.sports+' deportes, '+c.courts+' canchas, '+c.games+' encuentros, '+c.players+' jugadores.'
-    :'La base de datos no respondió.';
-}).catch(()=>{document.getElementById('estado').textContent='La base de datos no respondió.';});
-</script>
+<header class="bar" id="bar"></header>
+<main id="app" aria-live="polite"><p class="muted" style="padding:2rem 0">Cargando canchas…</p></main>
+<footer id="foot"><p><a href="/admin/">Configuración</a></p></footer>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript><p style="padding:1rem">Peloteo necesita JavaScript para funcionar.</p></noscript>
+<script src="/app.js" defer></script>
 </body>
 </html>

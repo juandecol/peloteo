@@ -74,8 +74,9 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 ## Jugadores sin registro
 
-- Cookie `visitor_id` aleatoria, de larga duración, `HttpOnly`, `Secure`, `SameSite=Lax`, creada por el servidor en la primera visita.
-- "Mis partidos" lista los encuentros de esa cookie.
+- Cookie `visitor_id` aleatoria (`V-` + 32 caracteres hex), de 400 días (el máximo que aceptan los navegadores), `HttpOnly`, `Secure`, `SameSite=Lax`, creada por el servidor en la primera llamada a `/api`. Una cookie con formato inválido se reemplaza.
+- "Mis partidos" lista los encuentros de esa cookie de hoy en adelante, incluidos los cancelados por el administrador. Muestra el contacto de los compañeros solo si el encuentro está confirmado, y el botón de cancelar solo mientras falte al menos 1 hora.
+- El navegador recuerda iniciales, email, WhatsApp y nivel por deporte en `localStorage`, solo como comodidad.
 - Cada aviso incluye un enlace con `cancel_token`, para poder cancelar desde otro dispositivo.
 
 ## Administrador
@@ -102,6 +103,9 @@ Públicas:
 - `POST /api/games/:id/join` unirse.
 - `GET /api/search` búsqueda de jugadores.
 - `GET /api/me/games` y `POST /api/games/:id/cancel`.
+- También: `GET /api/today` (fecha local y último día agendable, para el calendario) y `GET /api/sports/:id` (cantidades y categorías de un deporte).
+- `GET /api/search` recibe `sport_id`, `level` (nivel del jugador), `date_from`, `date_to`, `time_from` y `time_to`.
+- Errores: JSON `{ error, code, field }` con 400 (datos), 404 (no existe) o 409 (turno ocupado, partido completo, ya inscrito, cancelado).
 
 Administración (requieren sesión): `POST /admin/login`, `POST /admin/login/2fa`, `POST /admin/logout`, y CRUD bajo `/admin/api/venues`, `/sports`, `/courts`, `/games`.
 - También: `GET /admin/session` (estado de la sesión para la interfaz), `POST /admin/password` (cambio de contraseña, permitido aunque `must_change_password` esté activo), `GET /admin/api/meta` (listas para los formularios) y `POST /admin/api/games/:id/cancel`.
@@ -129,6 +133,9 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 - El selector de nivel muestra el número y el texto de la categoría.
 - Al abrir un partido: selector de cantidad de jugadores (solo si el deporte permite más de una) y selección de niveles aceptados.
 - La búsqueda pide el nivel del jugador (no una lista de niveles).
+- Archivos: `public/index.html` y `public/app.js` (flujo público), `public/styles.css` (compartido). Si un deporte se ofrece en un solo lugar, se salta la pantalla de lugares.
+- En los grupos de deportes se muestra el nombre más usado; si empatan, el que lleva tilde y no está en mayúsculas ("Pádel" antes que "PADEL").
+- El calendario solo deja avanzar a los meses que tocan el rango agendable (hoy a hoy + 15).
 - Mantener paleta, tipografía y textos del prototipo. Funcionar en modo claro y oscuro.
 - Accesible: foco visible, etiquetas en todos los campos, objetivos táctiles amplios.
 

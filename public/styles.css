@@ -154,3 +154,6 @@ textarea{display:block;width:100%;margin-top:.3rem;padding:.7rem .8rem;border-ra
 .warn{border-color:var(--clay)}
 .warn ul{margin:.4rem 0 0;padding-left:1.1rem}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+/* El título del inicio no cabía en teléfonos de 320 a 400 px de ancho. */
+.hero h1{font-size:clamp(2.2rem,10.5vw,4rem)}
+.opt small{font-weight:400;opacity:.85}

@@ -77,7 +77,7 @@ async function readJson(c: Ctx): Promise<Record<string, unknown>> {
  * debe ser el mismo sitio; y los POST deben enviar JSON (un formulario de otro
  * sitio no puede hacerlo sin pasar por CORS). PUT y DELETE ya requieren CORS.
  */
-const sameOriginJson: MiddlewareHandler<Env> = async (c, next) => {
+export const sameOriginJson: MiddlewareHandler<any> = async (c, next) => {
   if (c.req.method === "GET" || c.req.method === "HEAD") return next();
   const type = c.req.header("Content-Type") ?? "";
   if (c.req.method === "POST" && !type.toLowerCase().startsWith("application/json")) {
