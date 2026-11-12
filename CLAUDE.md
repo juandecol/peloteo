@@ -39,9 +39,9 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **categories**: `sport_id`, `level` (1 a 5), `label`. Máximo 5 por deporte. El nivel 1 es avanzado y el 5 principiante. El texto es libre y puede ser amable o gracioso, por ejemplo "Estoy entrenando para Wimbledon" o "Apenas logro pasar la pelota".
 
-**courts** (canchas): `id`, `sport_id`, `venue_id`, `name`, `surface` (arcilla, carpeta sintética, etc.), `status` (`operativa`, `mantencion`, `cerrada`), `notes`, `maps_url`, `lat`, `lng`, `open_time`, `close_time`, `slot_minutes` (60, 90 o 120), `days` (días de la semana en que opera), `available_from`, `available_to` (opcionales).
+**courts** (canchas): `id`, `sport_id`, `venue_id`, `name`, `surface` (arcilla, carpeta sintética, etc.), `status` (`operativa`, `mantencion`, `cerrada`), `notes`, `maps_url`, `lat`, `lng`, `open_time`, `close_time`, `slot_minutes` (60, 90 o 120), `days` (días de la semana en que opera, texto con números separados por coma donde 0 = domingo y 6 = sábado, por ejemplo `"1,2,3,4,5"`), `available_from`, `available_to` (opcionales). Cada cancha pertenece a un solo deporte; por ahora no se contemplan canchas compartidas entre deportes.
 
-**games** (encuentros): `id`, `venue_id`, `sport_id`, `court_id`, `date`, `time`, `capacity`, `status` (`abierto`, `confirmado`, `cancelado`), `created_at`. Restricción única sobre (`court_id`, `date`, `time`) para encuentros no cancelados: es la defensa contra la doble reserva.
+**games** (encuentros): `id`, `venue_id`, `sport_id`, `court_id`, `date`, `time`, `capacity`, `status` (`abierto`, `confirmado`, `cancelado`), `created_at`. Restricción única sobre (`court_id`, `date`, `time`) para encuentros no cancelados: es la defensa contra la doble reserva. El estado `cancelado` lo asigna solo el administrador (ver Administrador).
 
 **players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
 
@@ -49,14 +49,18 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **sessions**: `id`, `admin_id`, `expires_at`, `second_factor_passed`.
 
+**login_attempts** (intentos fallidos de login del administrador): `id`, `username`, `ip`, `created_at`. Se usa para aplicar el límite de intentos.
+
 ## Reglas de negocio
 
 - **Turnos:** cada cancha genera turnos desde `open_time` mientras el turno completo termine antes de `close_time`. Solo canchas `operativa`, en sus días de operación y dentro de su rango de fechas.
-- **Pasado:** no se muestran ni se aceptan turnos anteriores a la hora actual.
+- **Pasado:** un turno se muestra y se acepta (abrir, unirse) hasta 15 minutos después de su hora de inicio; pasado ese margen ya no se muestra ni se acepta.
+- **Anticipación:** se puede agendar desde hoy hasta 15 días por adelantado (hoy + 15). Fechas fuera de ese rango no se muestran ni se aceptan.
 - **Abrir partido:** el jugador elige deporte, lugar, día y hora; ingresa iniciales (2 a 4 letras), nivel y email. Se le asigna la primera cancha libre de ese turno y el encuentro queda `abierto`, reteniendo la cancha.
 - **Unirse:** otro jugador puede sumarse a un encuentro abierto. Al completarse `capacity`, pasa a `confirmado` y se avisa a todos.
 - **Búsqueda:** por deporte, lugar, rango de fechas, rango de horas y niveles aceptados. Devuelve encuentros abiertos donde algún jugador tiene uno de esos niveles.
 - **Cancelar:** un jugador puede liberar su cupo. Si el encuentro queda sin jugadores se elimina y la cancha se libera; si estaba confirmado vuelve a `abierto` y se avisa al resto.
+- **Cancelación por el administrador:** el administrador puede cancelar cualquier encuentro en cualquier momento. El encuentro no se borra: pasa a `cancelado`, la cancha queda libre y se avisa a sus jugadores.
 - **Concurrencia:** crear y unirse deben validarse en el servidor dentro de una sola operación. Si el turno ya se ocupó, responder con un error claro para que la interfaz ofrezca otra hora.
 - **Privacidad:** el contacto de un jugador solo se entrega a quienes comparten con él un encuentro confirmado. Las respuestas públicas solo incluyen iniciales y nivel.
 
@@ -70,10 +74,12 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 - Login de un factor: usuario y contraseña. Contraseña con hash PBKDF2 (Web Crypto) y sal por usuario. Nunca en texto plano ni en el código.
 - Usuario inicial `admin` / `admin`, creado por la migración con `must_change_password` activo: el sistema obliga a cambiarla en el primer ingreso.
-- Sesión en cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con expiración. Límite de intentos fallidos.
+- Sesión en cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con expiración. Límite de 2 intentos fallidos; al superarlo se bloquea el login de ese usuario e IP por 15 minutos (duración provisional), registrado en `login_attempts`.
 - **Preparado para 2FA:** el login ya es un flujo de dos pasos (`/login` y `/login/2fa`). Mientras `totp_enabled` sea falso, el segundo paso se omite. No implementar TOTP todavía, pero no cerrar el diseño.
-- Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de eliminar.
-- Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación y avisar a los jugadores afectados.
+- Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`).
+- Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
+- **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros no cancelados (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
+- Mientras no exista el canal de correo (etapa 5), los avisos se envían por `notify()` con un canal que solo los registra; la etapa 5 le conecta el correo sin cambiar quien llama.
 
 ## Rutas
 
@@ -104,7 +110,7 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 
 ## Interfaz
 
-- Flujo público: deporte, lugar, calendario del mes en curso, horas del día, formulario, confirmación.
+- Flujo público: deporte, lugar, calendario (solo días entre hoy y hoy + 15; si el rango cruza al mes siguiente, se puede avanzar a ese mes), horas del día, formulario, confirmación.
 - El calendario marca los días con encuentros que buscan jugadores.
 - El selector de nivel muestra el número y el texto de la categoría.
 - Mantener paleta, tipografía y textos del prototipo. Funcionar en modo claro y oscuro.
@@ -139,3 +145,16 @@ Marcar aquí la respuesta cuando se defina:
 - ¿Los clubes reservan canchas por otros canales? Si es así, definir cómo se bloquean esos horarios.
 - ¿Cuánto tiempo antes puede cancelarse un cupo?
 - Proveedor de correo y dominio definitivo.
+- Duración del bloqueo tras 2 intentos fallidos de login (supuesto actual: 15 minutos).
+
+Decididas (2026-11-12):
+
+- Anticipación máxima: 15 días.
+- `cancelado` es exclusivo del administrador; los encuentros cancelados se conservan.
+- Login del administrador: máximo 2 intentos fallidos, registrados en `login_attempts`.
+- `days`: 0 = domingo a 6 = sábado, texto separado por comas.
+- Avisos antes de la etapa 5: `notify()` con un canal que solo registra.
+- Cada cancha pertenece a un solo deporte.
+- No se puede modificar una cancha si eso afecta encuentros futuros; el administrador siempre puede cancelar.
+- Un turno sigue visible y aceptando jugadores hasta 15 minutos después de su inicio.
+- La migración incluye el hash y la sal de la contraseña inicial `admin`; se acepta porque se obliga a cambiarla en el primer ingreso.
