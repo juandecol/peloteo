@@ -128,6 +128,26 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 
 Terminar y probar cada etapa antes de empezar la siguiente. Un commit por cambio coherente, con mensaje en español.
 
+## Desarrollo local
+
+```
+npm install          # dependencias (wrangler, hono, typescript)
+npm run db:migrate   # aplica migrations/ a la base D1 local (.wrangler/state)
+npm run dev          # wrangler dev en http://localhost:8787
+npm run check        # genera tipos (wrangler types) y revisa con tsc
+```
+
+- `wrangler.jsonc` tiene un `database_id` de marcador. Antes del primer despliegue se crea la base con `wrangler d1 create peloteo` y se reemplaza por el ID real.
+- Para empezar de cero en local, borrar `.wrangler/state` y volver a `npm run db:migrate`.
+- `GET /api/health` devuelve el conteo de registros; sirve para comprobar que el Worker y D1 responden.
+- La migración `0001_init.sql` incluye los datos de ejemplo del prototipo. Antes de producción, decidir si se eliminan con una migración posterior.
+
+Convenciones fijadas en la etapa 1:
+
+- Prefijos adicionales de ID: `J-` para cupos de jugadores (`players`), `A-` para administradores.
+- `password_hash` guarda `pbkdf2-sha256$<iteraciones>$<hash hex>` (100.000 iteraciones, el máximo que admite Web Crypto en Workers); `password_salt` en hex.
+- `created_at` en UTC (ISO 8601); `date` y `time` de los encuentros en hora local de Chile.
+
 ## Forma de trabajo
 
 - Probar en local con `wrangler dev` antes de desplegar.
