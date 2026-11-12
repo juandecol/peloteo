@@ -18,6 +18,7 @@ import {
   type GameRow,
   type PublicGame,
 } from "./availability.ts";
+import type { PendingNotice } from "./notify.ts";
 import { isUniqueViolation, newId, newToken, placeholders, type Db, type DbStatement } from "./db.ts";
 import {
   hasNotStarted,
@@ -58,19 +59,7 @@ export class MatchError extends Error {
   }
 }
 
-export type MatchEvent =
-  | "partido_publicado"
-  | "jugador_se_sumo"
-  | "partido_confirmado"
-  | "partido_sin_cancha"
-  | "cupo_cancelado";
-
-/** Aviso que la capa de rutas entrega a notify(): a qué jugadores y por qué. */
-export interface PendingNotice {
-  event: MatchEvent;
-  game_id: string;
-  player_ids: string[];
-}
+export type { PendingNotice } from "./notify.ts";
 
 // ---------------------------------------------------------------
 // Validación de los datos del jugador
@@ -173,7 +162,7 @@ interface SportRow {
 
 async function loadSport(db: Db, sportId: string): Promise<SportRow> {
   const sport = await db
-    .prepare("SELECT id, venue_id, match_sizes FROM sports WHERE id = ?")
+    .prepare("SELECT id, venue_id, match_sizes FROM sports WHERE id = ? AND deleted_at IS NULL")
     .bind(sportId)
     .first<SportRow>();
   if (!sport) throw new MatchError("deporte_no_existe", "Ese deporte ya no está disponible.");

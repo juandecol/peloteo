@@ -168,7 +168,7 @@ const COURT_COLUMNS =
 /** Canchas de un deporte, en el orden en que se asignan (nombre, luego ID). */
 export async function loadCourts(db: Db, sportId: string): Promise<Court[]> {
   const { results } = await db
-    .prepare(`SELECT ${COURT_COLUMNS} FROM courts WHERE sport_id = ? ORDER BY name, id`)
+    .prepare(`SELECT ${COURT_COLUMNS} FROM courts WHERE sport_id = ? AND deleted_at IS NULL ORDER BY name, id`)
     .bind(sportId)
     .all<Court>();
   return results;

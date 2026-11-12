@@ -84,6 +84,8 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`).
 - Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
 - **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros confirmados en esa cancha (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
+- **Eliminación lógica:** lugares, deportes y canchas eliminados se marcan con `deleted_at` (migración `0003`) y dejan de aparecer en todas partes; así los encuentros cancelados se conservan con sus referencias. Eliminar un lugar elimina sus deportes y canchas; eliminar un deporte, sus canchas.
+- **Detalles del login (etapa 3):** sesión de 12 horas en la cookie `peloteo_admin` (`Path=/admin`); la base guarda el SHA-256 del token, no el token. Contraseña nueva de al menos 10 caracteres, distinta del usuario y de la actual; al cambiarla se cierran las demás sesiones. Las escrituras exigen mismo origen y, en POST, JSON (defensa CSRF además de `SameSite=Strict`). `POST /admin/login/2fa` responde 501 mientras TOTP no esté implementado (etapa 7).
 - Mientras no exista el canal de correo (etapa 5), los avisos se envían por `notify()` con un canal que solo los registra; la etapa 5 le conecta el correo sin cambiar quien llama.
 
 ## Rutas
@@ -99,6 +101,9 @@ Públicas:
 - `GET /api/me/games` y `POST /api/games/:id/cancel`.
 
 Administración (requieren sesión): `POST /admin/login`, `POST /admin/login/2fa`, `POST /admin/logout`, y CRUD bajo `/admin/api/venues`, `/sports`, `/courts`, `/games`.
+- También: `GET /admin/session` (estado de la sesión para la interfaz), `POST /admin/password` (cambio de contraseña, permitido aunque `must_change_password` esté activo), `GET /admin/api/meta` (listas para los formularios) y `POST /admin/api/games/:id/cancel`.
+- Eliminar (`DELETE`) con encuentros futuros afectados responde 409 con la lista; se repite con `?confirm=1` para cancelarlos y eliminar.
+- Las pantallas de configuración están en `public/admin/` y se sirven en `/admin/`. Los estilos compartidos, tomados del prototipo, en `public/styles.css`.
 
 Validar toda entrada en el servidor. Consultas siempre parametrizadas.
 
@@ -148,7 +153,8 @@ npm run check        # genera tipos (wrangler types) y revisa con tsc
 - Las pruebas usan el runner de Node (`node --test`) y SQLite incorporado (`node:sqlite`), sin dependencias extra. `test/helpers/db.ts` imita la API de D1 (incluido `batch` transaccional) y aplica las migraciones reales.
 - Los imports entre archivos TypeScript llevan extensión `.ts` para que Node los ejecute directamente. `tsc` revisa `src/`; las pruebas no se revisan con `tsc` (no hay tipos de Node instalados).
 
-- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`.
+- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota solo tiene `0001`; antes del próximo despliegue hay que aplicar `0002` y `0003`.
+- La base local se identifica por el `database_id`: si cambia, queda una base local vacía y hay que volver a `npm run db:migrate`.
 - Despliegue: `npx wrangler deploy`. Dirección pública: https://peloteo.peloteo.workers.dev
 - Para empezar de cero en local, borrar `.wrangler/state` y volver a `npm run db:migrate`.
 - `GET /api/health` devuelve el conteo de registros; sirve para comprobar que el Worker y D1 responden.
@@ -188,6 +194,7 @@ Marcar aquí la respuesta cuando se defina:
 - ¿Cuánto tiempo antes puede cancelarse un cupo? (Supuesto actual: hasta la hora de inicio.)
 - Proveedor de correo y dominio definitivo.
 - Duración del bloqueo tras 2 intentos fallidos de login (supuesto actual: 15 minutos).
+- PBKDF2 con 100.000 iteraciones podría superar el límite de CPU del plan gratuito de Workers (10 ms por solicitud) en el login. Verificar al desplegar; si falla, bajar las iteraciones (el formato del hash las guarda, así que se puede migrar sin perder la contraseña).
 
 Decididas (2026-11-12):
 
