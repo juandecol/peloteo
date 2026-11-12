@@ -28,8 +28,9 @@ const game = (over: Partial<PublicGame> = {}): PublicGame => ({
   id: "E-AAAAA",
   date: "2026-11-17",
   time: "18:00",
-  court_id: "C-AAAAA",
+  court_id: null,
   capacity: 2,
+  accepted_levels: [1, 2, 3, 4, 5],
   status: "abierto",
   players: [{ initials: "MT", level: 3 }],
   missing: 1,
@@ -78,14 +79,23 @@ test("solo dentro del rango de fechas de la cancha", () => {
   assert.equal(courtSlots(c, "2026-11-26").length, 0);
 });
 
-test("día: cuenta canchas libres y muestra encuentros abiertos", () => {
+test("día: los encuentros abiertos no ocupan cancha; los confirmados sí", () => {
   const courts = [court({ id: "C-1" }), court({ id: "C-2", name: "Cancha 2" })];
-  const slots = dayAvailability(courts, [game({ court_id: "C-1" })], "2026-11-17", now);
+  const open = game({ id: "E-OPEN1" });
+  const confirmed = game({ id: "E-CONF1", court_id: "C-1", status: "confirmado", missing: 0 });
+  const slots = dayAvailability(courts, [open, confirmed], "2026-11-17", now);
   const s18 = slots.find((s) => s.time === "18:00")!;
   assert.equal(s18.free_courts, 1);
-  assert.equal(s18.open_games.length, 1);
+  assert.deepEqual(s18.open_games.map((g) => g.id), ["E-OPEN1"]);
   assert.equal(s18.full, false);
   assert.equal(slots.find((s) => s.time === "08:00")!.free_courts, 2);
+});
+
+test("día: los encuentros sin cancha no aparecen como abiertos ni ocupan cancha", () => {
+  const sinCancha = game({ status: "sin_cancha", missing: 0 });
+  const s18 = dayAvailability([court()], [sinCancha], "2026-11-17", now).find((s) => s.time === "18:00")!;
+  assert.equal(s18.free_courts, 1);
+  assert.equal(s18.open_games.length, 0);
 });
 
 test("día: un turno sin canchas libres ni encuentros abiertos queda completo", () => {
@@ -120,8 +130,8 @@ test("datos de ejemplo: tenis en Santa Martina usa 2 canchas (la 3 está en mant
 
 test("resumen del mes: solo días agendables y marca los que tienen encuentros abiertos", async () => {
   const db = emptyGamesDb();
-  db.exec(`INSERT INTO games (id, venue_id, sport_id, court_id, date, time, capacity)
-           VALUES ('E-AAAAA', 'L-SM001', 'D-TEN01', 'C-T1SM1', '2026-11-20', '18:00', 2);
+  db.exec(`INSERT INTO games (id, venue_id, sport_id, date, time, capacity, accepted_levels)
+           VALUES ('E-AAAAA', 'L-SM001', 'D-TEN01', '2026-11-20', '18:00', 2, '1,2,3,4,5');
            INSERT INTO players (id, game_id, visitor_id, initials, level, email, cancel_token)
            VALUES ('J-AAAAA', 'E-AAAAA', 'V-1', 'MT', 3, 'mt@example.com', 'aaaa');`);
   const nov = await getMonthSummary(db, "D-TEN01", "2026-11", now);

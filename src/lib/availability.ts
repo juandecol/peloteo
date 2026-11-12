@@ -1,4 +1,7 @@
 // Disponibilidad: turnos que genera cada cancha y resumen por día y por mes.
+//
+// Una cancha está libre en un turno si genera ese turno y no tiene un encuentro
+// confirmado a esa hora. Los encuentros abiertos no ocupan cancha.
 
 import { placeholders, type Db } from "./db.ts";
 import {
@@ -23,6 +26,8 @@ export interface Court {
   available_to: string | null;
 }
 
+export type GameStatus = "abierto" | "sin_cancha" | "confirmado";
+
 /** Jugador tal como se muestra públicamente: solo iniciales y nivel. */
 export interface PublicPlayer {
   initials: string;
@@ -34,9 +39,11 @@ export interface PublicGame {
   id: string;
   date: string;
   time: string;
-  court_id: string;
+  /** Cancha asignada; nula mientras no esté confirmado. */
+  court_id: string | null;
   capacity: number;
-  status: "abierto" | "confirmado";
+  accepted_levels: number[];
+  status: GameStatus;
   players: PublicPlayer[];
   missing: number;
   mine: boolean;
@@ -54,17 +61,27 @@ export interface DaySummary {
   date: string;
   /** Hay al menos un turno con cancha libre o encuentro abierto. */
   available: boolean;
-  /** Hay encuentros que buscan jugadores. */
+  /** Encuentros que buscan jugadores. */
   open_games: number;
+}
+
+/** Lista de enteros separados por coma ("1, 3,x" → [1, 3]), filtrada por rango. */
+export function parseIntList(text: string, min: number, max: number): number[] {
+  return [
+    ...new Set(
+      text
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => /^\d+$/.test(s))
+        .map(Number)
+        .filter((n) => n >= min && n <= max),
+    ),
+  ].sort((a, b) => a - b);
 }
 
 /** Días de la semana en que opera una cancha ("0,1,2" → [0, 1, 2]). */
 export function parseDays(days: string): number[] {
-  return days
-    .split(",")
-    .map((d) => d.trim())
-    .filter((d) => /^[0-6]$/.test(d))
-    .map(Number);
+  return parseIntList(days, 0, 6);
 }
 
 /**
@@ -92,7 +109,7 @@ export function courtHasSlot(court: Court, date: string, time: string): boolean 
 
 /**
  * Turnos de un día para un deporte. Combina los turnos de sus canchas con los
- * encuentros vigentes (no cancelados) de ese día. Omite los turnos cerrados.
+ * encuentros vigentes de ese día. Omite los turnos cerrados.
  */
 export function dayAvailability(
   courts: Court[],
@@ -101,7 +118,9 @@ export function dayAvailability(
   now: LocalNow,
 ): Slot[] {
   if (!isDateBookable(date, now)) return [];
-  const byCourtTime = new Map(games.map((g) => [g.court_id + "|" + g.time, g]));
+  const taken = new Set(
+    games.filter((g) => g.status === "confirmado" && g.court_id).map((g) => g.court_id + "|" + g.time),
+  );
   const slots = new Map<string, Slot>();
   for (const court of courts) {
     for (const time of courtSlots(court, date)) {
@@ -111,10 +130,12 @@ export function dayAvailability(
         slot = { time, free_courts: 0, open_games: [], full: false };
         slots.set(time, slot);
       }
-      const game = byCourtTime.get(court.id + "|" + time);
-      if (!game) slot.free_courts++;
-      else if (game.status === "abierto" && game.missing > 0) slot.open_games.push(game);
+      if (!taken.has(court.id + "|" + time)) slot.free_courts++;
     }
+  }
+  for (const g of games) {
+    const slot = slots.get(g.time);
+    if (slot && g.status === "abierto" && g.missing > 0) slot.open_games.push(g);
   }
   return [...slots.values()]
     .map((s) => ({ ...s, full: s.free_courts === 0 && s.open_games.length === 0 }))
@@ -153,14 +174,18 @@ export async function loadCourts(db: Db, sportId: string): Promise<Court[]> {
   return results;
 }
 
-interface GameRow {
+/** Fila de games con las columnas que necesita la vista pública. */
+export interface GameRow {
   id: string;
   date: string;
   time: string;
-  court_id: string;
+  court_id: string | null;
   capacity: number;
-  status: "abierto" | "confirmado";
+  accepted_levels: string;
+  status: GameStatus;
 }
+
+export const GAME_COLUMNS = "id, date, time, court_id, capacity, accepted_levels, status";
 
 interface PlayerRow {
   game_id: string;
@@ -193,6 +218,7 @@ export async function toPublicGames(
       time: g.time,
       court_id: g.court_id,
       capacity: g.capacity,
+      accepted_levels: parseIntList(g.accepted_levels, 1, 5),
       status: g.status,
       players: own.map((p) => ({ initials: p.initials, level: p.level })),
       missing: Math.max(0, g.capacity - own.length),
@@ -210,9 +236,9 @@ async function loadGames(
 ): Promise<PublicGame[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, date, time, court_id, capacity, status FROM games
+      `SELECT ${GAME_COLUMNS} FROM games
        WHERE sport_id = ? AND date BETWEEN ? AND ? AND status <> 'cancelado'
-       ORDER BY date, time`,
+       ORDER BY date, time, rowid`,
     )
     .bind(sportId, from, to)
     .all<GameRow>();

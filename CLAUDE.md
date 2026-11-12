@@ -35,13 +35,16 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **venues** (lugares): `id`, `name`, `address`, `maps_url`, `created_at`.
 
-**sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `players_per_match` (2 o 4), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
+**sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; por ejemplo tenis `"2"` y pádel `"2,4"`), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
 
 **categories**: `sport_id`, `level` (1 a 5), `label`. Máximo 5 por deporte. El nivel 1 es avanzado y el 5 principiante. El texto es libre y puede ser amable o gracioso, por ejemplo "Estoy entrenando para Wimbledon" o "Apenas logro pasar la pelota".
 
 **courts** (canchas): `id`, `sport_id`, `venue_id`, `name`, `surface` (arcilla, carpeta sintética, etc.), `status` (`operativa`, `mantencion`, `cerrada`), `notes`, `maps_url`, `lat`, `lng`, `open_time`, `close_time`, `slot_minutes` (60, 90 o 120), `days` (días de la semana en que opera, texto con números separados por coma donde 0 = domingo y 6 = sábado, por ejemplo `"1,2,3,4,5"`), `available_from`, `available_to` (opcionales). Cada cancha pertenece a un solo deporte; por ahora no se contemplan canchas compartidas entre deportes.
 
-**games** (encuentros): `id`, `venue_id`, `sport_id`, `court_id`, `date`, `time`, `capacity`, `status` (`abierto`, `confirmado`, `cancelado`), `created_at`. Restricción única sobre (`court_id`, `date`, `time`) para encuentros no cancelados: es la defensa contra la doble reserva. El estado `cancelado` lo asigna solo el administrador (ver Administrador).
+**games** (encuentros): `id`, `venue_id`, `sport_id`, `court_id` (nulo mientras no esté confirmado), `date`, `time`, `capacity` (una de las `match_sizes` del deporte), `accepted_levels` (niveles que acepta quien abrió el partido, texto como `"2,3,4"`), `status` (`abierto`, `sin_cancha`, `confirmado`, `cancelado`), `created_at`.
+- Un encuentro `confirmado` siempre tiene cancha; uno `abierto` o `sin_cancha`, nunca (CHECK en la base).
+- Restricción única sobre (`court_id`, `date`, `time`) solo para encuentros `confirmado`: es la defensa contra la doble reserva.
+- El estado `cancelado` lo asigna solo el administrador (ver Administrador).
 
 **players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
 
@@ -56,10 +59,12 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Turnos:** cada cancha genera turnos desde `open_time` mientras el turno completo termine antes de `close_time`. Solo canchas `operativa`, en sus días de operación y dentro de su rango de fechas.
 - **Pasado:** un turno se muestra y se acepta (abrir, unirse) hasta 15 minutos después de su hora de inicio; pasado ese margen ya no se muestra ni se acepta.
 - **Anticipación:** se puede agendar desde hoy hasta 15 días por adelantado (hoy + 15). Fechas fuera de ese rango no se muestran ni se aceptan.
-- **Abrir partido:** el jugador elige deporte, lugar, día y hora; ingresa iniciales (2 a 4 letras), nivel y email. Se le asigna la primera cancha libre de ese turno y el encuentro queda `abierto`, reteniendo la cancha.
-- **Unirse:** otro jugador puede sumarse a un encuentro abierto. Al completarse `capacity`, pasa a `confirmado` y se avisa a todos.
-- **Búsqueda:** por deporte, lugar, rango de fechas, rango de horas y niveles aceptados. Devuelve encuentros abiertos donde algún jugador tiene uno de esos niveles.
-- **Cancelar:** un jugador puede liberar su cupo. Si el encuentro queda sin jugadores se elimina y la cancha se libera; si estaba confirmado vuelve a `abierto` y se avisa al resto.
+- **Cancha libre:** una cancha está libre en un turno si genera ese turno y no tiene un encuentro `confirmado` a esa hora. Los encuentros abiertos no ocupan cancha.
+- **Abrir partido:** el jugador elige deporte, lugar, día y hora; ingresa iniciales (2 a 4 letras), nivel y email; elige cuántos jugadores serán (una de las `match_sizes` del deporte; si hay una sola, se usa esa) y qué niveles acepta (al menos uno, entre las categorías del deporte, incluido el suyo). Solo se puede abrir si en ese momento queda al menos una cancha libre en el turno. El encuentro queda `abierto`, sin cancha asignada.
+- **Unirse:** otro jugador puede sumarse a un encuentro `abierto` si su nivel está entre los `accepted_levels`. Al completarse `capacity` se asigna, en la misma operación, la primera cancha libre del turno (por nombre y luego ID) y el encuentro pasa a `confirmado`; se avisa a todos.
+- **Sin cancha:** si al completarse ya no queda cancha libre, el encuentro no se confirma: pasa a `sin_cancha` (completo, sin cancha, no admite más jugadores), se avisa a los jugadores y se les ofrecen otros turnos.
+- **Búsqueda:** por deporte, lugar, rango de fechas, rango de horas y el nivel del jugador. Devuelve solo encuentros a los que ese jugador puede unirse: `abierto`, con cupo, turno vigente, su nivel entre los aceptados y sin estar ya inscrito.
+- **Cancelar:** un jugador puede liberar su cupo. Si el encuentro queda sin jugadores se elimina; si estaba `confirmado` o `sin_cancha` vuelve a `abierto` sin cancha (la cancha se libera) y se avisa al resto.
 - **Cancelación por el administrador:** el administrador puede cancelar cualquier encuentro en cualquier momento. El encuentro no se borra: pasa a `cancelado`, la cancha queda libre y se avisa a sus jugadores.
 - **Concurrencia:** crear y unirse deben validarse en el servidor dentro de una sola operación. Si el turno ya se ocupó, responder con un error claro para que la interfaz ofrezca otra hora.
 - **Privacidad:** el contacto de un jugador solo se entrega a quienes comparten con él un encuentro confirmado. Las respuestas públicas solo incluyen iniciales y nivel.
@@ -78,7 +83,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Preparado para 2FA:** el login ya es un flujo de dos pasos (`/login` y `/login/2fa`). Mientras `totp_enabled` sea falso, el segundo paso se omite. No implementar TOTP todavía, pero no cerrar el diseño.
 - Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`).
 - Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
-- **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros no cancelados (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
+- **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros confirmados en esa cancha (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
 - Mientras no exista el canal de correo (etapa 5), los avisos se envían por `notify()` con un canal que solo los registra; la etapa 5 le conecta el correo sin cambiar quien llama.
 
 ## Rutas
@@ -104,7 +109,7 @@ Una sola función `notify(evento, jugador, encuentro)` con canales intercambiabl
 - **Etapa inicial:** correo transaccional (proveedor por definir) y, en la pantalla de confirmación, enlace `wa.me` para que los jugadores emparejados se escriban entre ellos.
 - **Etapa posterior:** WhatsApp Cloud API con plantillas de utilidad aprobadas, solo a quienes marcaron `whatsapp_opt_in`. Requiere cuenta de Meta verificada y número dedicado; cada mensaje tiene costo.
 
-Eventos: partido publicado, jugador se sumó, partido confirmado, cupo cancelado, encuentro eliminado por el administrador.
+Eventos: partido publicado, jugador se sumó, partido confirmado, partido sin cancha (con otros turnos sugeridos), cupo cancelado, encuentro eliminado por el administrador.
 
 Las claves de proveedores van como secrets de Cloudflare, nunca en el repositorio.
 
@@ -113,6 +118,8 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 - Flujo público: deporte, lugar, calendario (solo días entre hoy y hoy + 15; si el rango cruza al mes siguiente, se puede avanzar a ese mes), horas del día, formulario, confirmación.
 - El calendario marca los días con encuentros que buscan jugadores.
 - El selector de nivel muestra el número y el texto de la categoría.
+- Al abrir un partido: selector de cantidad de jugadores (solo si el deporte permite más de una) y selección de niveles aceptados.
+- La búsqueda pide el nivel del jugador (no una lista de niveles).
 - Mantener paleta, tipografía y textos del prototipo. Funcionar en modo claro y oscuro.
 - Accesible: foco visible, etiquetas en todos los campos, objetivos táctiles amplios.
 
@@ -158,10 +165,10 @@ Lógica de la etapa 2 (`src/lib/`):
 - `time.ts`: hora local de Chile, rango agendable (hoy + 15) y margen de 15 minutos.
 - `availability.ts`: turnos por cancha, disponibilidad del día y resumen del mes.
 - `matching.ts`: abrir partido, unirse, cancelar (por visitante o por token) y búsqueda. Cada escritura es un solo `db.batch()` con condiciones en SQL; los errores son `MatchError` con un `code` y un mensaje para la interfaz. Las funciones no llaman a `notify()`: devuelven `notices` (evento y jugadores) para que la ruta los envíe.
-- La primera cancha libre se elige por nombre y luego por ID.
+- La primera cancha libre se elige por nombre y luego por ID, al confirmarse el encuentro.
 - Los jugadores de un encuentro se ordenan por orden de llegada (`rowid`).
 - Cancelar un cupo solo se permite antes de la hora de inicio (supuesto; ver Decisiones pendientes).
-- "Cupo cancelado" se avisa al resto solo cuando un encuentro confirmado vuelve a abierto, como dice la regla.
+- "Cupo cancelado" se avisa al resto solo cuando un encuentro `confirmado` o `sin_cancha` vuelve a abierto.
 
 ## Forma de trabajo
 
@@ -174,9 +181,9 @@ Lógica de la etapa 2 (`src/lib/`):
 
 Marcar aquí la respuesta cuando se defina:
 
-- ¿El pádel se completa siempre con 4 jugadores, o también se permite 2?
-- ¿La cancha se retiene al abrir el partido (supuesto actual) o solo al confirmarse?
-- ¿Se restringe unirse según diferencia de nivel?
+- Encuentro `sin_cancha`: ¿cómo se "ofrecen otros turnos"? (Supuesto actual: el aviso sugiere turnos con canchas libres y los jugadores deciden; el encuentro queda `sin_cancha` hasta que cancelen.) ¿Se confirma solo si se libera una cancha en ese turno?
+- ¿Se muestran encuentros abiertos de un turno que ya no tiene canchas libres? (Supuesto actual: sí, pero al completarse quedarán `sin_cancha`.)
+- ¿Quien abre debe incluir su propio nivel entre los aceptados? (Supuesto actual: sí.)
 - ¿Los clubes reservan canchas por otros canales? Si es así, definir cómo se bloquean esos horarios.
 - ¿Cuánto tiempo antes puede cancelarse un cupo? (Supuesto actual: hasta la hora de inicio.)
 - Proveedor de correo y dominio definitivo.
@@ -193,3 +200,6 @@ Decididas (2026-11-12):
 - No se puede modificar una cancha si eso afecta encuentros futuros; el administrador siempre puede cancelar.
 - Un turno sigue visible y aceptando jugadores hasta 15 minutos después de su inicio.
 - La migración incluye el hash y la sal de la contraseña inicial `admin`; se acepta porque se obliga a cambiarla en el primer ingreso.
+- Jugadores por partido: cada deporte define las cantidades permitidas (tenis 2; pádel 2 o 4) y quien abre elige una.
+- Cancha: no se retiene al abrir; se asigna la primera libre al completarse. Solo se abre si queda al menos una cancha libre. Si al completarse no hay cancha, el encuentro no se confirma (`sin_cancha`). La restricción única aplica solo a confirmados (migración `0002`).
+- Niveles: quien abre define los niveles aceptados; solo se unen jugadores de esos niveles; la búsqueda muestra solo encuentros a los que el jugador puede unirse.

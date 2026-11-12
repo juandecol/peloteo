@@ -8,6 +8,12 @@ import { join } from "node:path";
 
 type Value = string | number | null;
 
+const MIGRATIONS_DIR = join(import.meta.dirname, "..", "..", "migrations");
+
+export function migrationFiles(): string[] {
+  return readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
+}
+
 class Statement {
   readonly sql: string;
   readonly params: Value[];
@@ -48,12 +54,25 @@ class Statement {
 export class TestDb {
   readonly raw: DatabaseSync;
 
-  constructor() {
+  /** Aplica las migraciones en orden; con `upTo`, solo hasta ese archivo (incluido). */
+  constructor(upTo?: string) {
     this.raw = new DatabaseSync(":memory:");
     this.raw.exec("PRAGMA foreign_keys = ON");
-    const dir = join(import.meta.dirname, "..", "..", "migrations");
-    for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
-      this.raw.exec(readFileSync(join(dir, file), "utf8"));
+    for (const file of migrationFiles()) {
+      if (upTo && file > upTo) break;
+      this.applyMigration(file);
+    }
+  }
+
+  /** Aplica una migración dentro de una transacción, como D1. */
+  applyMigration(file: string): void {
+    this.raw.exec("BEGIN");
+    try {
+      this.raw.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+      this.raw.exec("COMMIT");
+    } catch (err) {
+      this.raw.exec("ROLLBACK");
+      throw err;
     }
   }
 

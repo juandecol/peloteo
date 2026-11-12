@@ -1,12 +1,24 @@
 // Emparejamiento: abrir partido, unirse, cancelar un cupo y buscar jugadores.
 //
+// La cancha no se retiene al abrir: un encuentro abierto no tiene cancha y se le
+// asigna la primera libre del turno al completarse. Si ya no queda, pasa a
+// 'sin_cancha'.
+//
 // Concurrencia: cada escritura se hace en un solo db.batch(), que D1 ejecuta como
-// una transacción. Las sentencias verifican en SQL que el turno siga libre o que
-// el encuentro tenga cupo, y el índice único (court_id, date, time) es la última
-// defensa contra la doble reserva.
+// una transacción. Las sentencias verifican en SQL que quede cancha libre o que
+// el encuentro tenga cupo, y el índice único (court_id, date, time) sobre los
+// encuentros confirmados es la última defensa contra la doble reserva.
 
-import { courtHasSlot, loadCourts, toPublicGames, type PublicGame } from "./availability.ts";
-import { isUniqueViolation, newId, newToken, placeholders, type Db } from "./db.ts";
+import {
+  courtHasSlot,
+  GAME_COLUMNS,
+  loadCourts,
+  parseIntList,
+  toPublicGames,
+  type GameRow,
+  type PublicGame,
+} from "./availability.ts";
+import { isUniqueViolation, newId, newToken, placeholders, type Db, type DbStatement } from "./db.ts";
 import {
   hasNotStarted,
   isDate,
@@ -30,6 +42,7 @@ export type MatchErrorCode =
   | "encuentro_no_existe"
   | "encuentro_completo"
   | "encuentro_cancelado"
+  | "nivel_no_aceptado"
   | "ya_inscrito"
   | "cupo_no_existe"
   | "cancelacion_cerrada";
@@ -49,6 +62,7 @@ export type MatchEvent =
   | "partido_publicado"
   | "jugador_se_sumo"
   | "partido_confirmado"
+  | "partido_sin_cancha"
   | "cupo_cancelado";
 
 /** Aviso que la capa de rutas entrega a notify(): a qué jugadores y por qué. */
@@ -116,6 +130,37 @@ export function validatePlayer(input: PlayerInput, allowedLevels: number[]): Val
   return { initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0 };
 }
 
+/** Cantidad de jugadores elegida: debe ser una de las permitidas por el deporte. */
+export function validateCapacity(input: unknown, sizes: number[]): number {
+  if ((input === undefined || input === null || input === "") && sizes.length === 1) return sizes[0]!;
+  const n = Number(input);
+  if (!Number.isInteger(n) || !sizes.includes(n)) {
+    throw new MatchError("datos_invalidos", "Elige cuántos jugadores serán.", "capacity");
+  }
+  return n;
+}
+
+/** Niveles aceptados: al menos uno, entre las categorías del deporte e incluido el propio. */
+export function validateAcceptedLevels(input: unknown, sportLevels: number[], ownLevel: number): number[] {
+  const list = Array.isArray(input) ? input.map(Number) : [];
+  if (list.some((n) => !Number.isInteger(n) || !sportLevels.includes(n))) {
+    throw new MatchError("datos_invalidos", "Elige niveles de la lista.", "accepted_levels");
+  }
+  const levels = [...new Set(list)].sort((a, b) => a - b);
+  if (levels.length === 0) {
+    throw new MatchError("datos_invalidos", "Elige qué niveles aceptas.", "accepted_levels");
+  }
+  if (!levels.includes(ownLevel)) {
+    throw new MatchError("datos_invalidos", "Incluye tu propio nivel entre los aceptados.", "accepted_levels");
+  }
+  return levels;
+}
+
+function levelsText(levels: number[]): string {
+  if (levels.length === 1) return "nivel " + levels[0];
+  return "niveles " + levels.slice(0, -1).join(", ") + " y " + levels.at(-1);
+}
+
 // ---------------------------------------------------------------
 // Consultas de apoyo
 // ---------------------------------------------------------------
@@ -123,12 +168,12 @@ export function validatePlayer(input: PlayerInput, allowedLevels: number[]): Val
 interface SportRow {
   id: string;
   venue_id: string;
-  players_per_match: number;
+  match_sizes: string;
 }
 
 async function loadSport(db: Db, sportId: string): Promise<SportRow> {
   const sport = await db
-    .prepare("SELECT id, venue_id, players_per_match FROM sports WHERE id = ?")
+    .prepare("SELECT id, venue_id, match_sizes FROM sports WHERE id = ?")
     .bind(sportId)
     .first<SportRow>();
   if (!sport) throw new MatchError("deporte_no_existe", "Ese deporte ya no está disponible.");
@@ -144,23 +189,23 @@ export async function loadLevels(db: Db, sportId: string): Promise<number[]> {
   return results.map((r) => r.level);
 }
 
-interface GameRow {
+interface FullGameRow {
   id: string;
   sport_id: string;
   date: string;
   time: string;
-  court_id: string;
   capacity: number;
-  status: "abierto" | "confirmado" | "cancelado";
+  accepted_levels: string;
+  status: "abierto" | "sin_cancha" | "confirmado" | "cancelado";
 }
 
-async function loadGame(db: Db, gameId: string): Promise<GameRow | null> {
+async function loadGame(db: Db, gameId: string): Promise<FullGameRow | null> {
   return db
     .prepare(
-      "SELECT id, sport_id, date, time, court_id, capacity, status FROM games WHERE id = ?",
+      "SELECT id, sport_id, date, time, capacity, accepted_levels, status FROM games WHERE id = ?",
     )
     .bind(gameId)
-    .first<GameRow>();
+    .first<FullGameRow>();
 }
 
 async function playerIds(db: Db, gameId: string): Promise<string[]> {
@@ -172,23 +217,61 @@ async function playerIds(db: Db, gameId: string): Promise<string[]> {
 }
 
 async function publicGame(db: Db, gameId: string, visitorId: string): Promise<PublicGame> {
-  const row = await loadGame(db, gameId);
-  if (!row || row.status === "cancelado") {
-    throw new MatchError("encuentro_no_existe", "Ese partido ya no existe.");
-  }
-  const [game] = await toPublicGames(db, [{ ...row, status: row.status }], visitorId);
+  const row = await db
+    .prepare(`SELECT ${GAME_COLUMNS} FROM games WHERE id = ? AND status <> 'cancelado'`)
+    .bind(gameId)
+    .first<GameRow>();
+  if (!row) throw new MatchError("encuentro_no_existe", "Ese partido ya no existe.");
+  const [game] = await toPublicGames(db, [row], visitorId);
   return game!;
 }
 
-function insertPlayerSql(condition: string): string {
-  return `INSERT INTO players
-    (id, game_id, visitor_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`;
+/** IDs de las canchas del deporte que generan ese turno, en orden de asignación. */
+async function slotCourtIds(db: Db, sportId: string, date: string, time: string): Promise<string[]> {
+  return (await loadCourts(db, sportId)).filter((c) => courtHasSlot(c, date, time)).map((c) => c.id);
 }
 
-function playerValues(id: string, gameId: string, visitorId: string, p: ValidPlayer, token: string) {
-  return [id, gameId, visitorId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token];
+/**
+ * Subconsulta SQL que devuelve la primera cancha libre (sin encuentro confirmado)
+ * entre las indicadas, para la fecha y hora dadas. Devuelve [sql, parámetros].
+ */
+function firstFreeCourtSql(courtIds: string[], date: string, time: string): [string, unknown[]] {
+  if (courtIds.length === 0) return ["(SELECT NULL)", []];
+  return [
+    `(SELECT c.id FROM courts c
+      WHERE c.id IN (${placeholders(courtIds.length)})
+        AND NOT EXISTS (
+          SELECT 1 FROM games g
+          WHERE g.court_id = c.id AND g.date = ? AND g.time = ? AND g.status = 'confirmado')
+      ORDER BY c.name, c.id
+      LIMIT 1)`,
+    [...courtIds, date, time],
+  ];
 }
+
+function insertPlayer(
+  db: Db,
+  condition: string,
+  conditionParams: unknown[],
+  id: string,
+  gameId: string,
+  visitorId: string,
+  p: ValidPlayer,
+  token: string,
+): DbStatement {
+  return db
+    .prepare(
+      `INSERT INTO players
+         (id, game_id, visitor_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
+    )
+    .bind(
+      id, gameId, visitorId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token,
+      ...conditionParams,
+    );
+}
+
+const PLAYER_COUNT = "(SELECT count(*) FROM players p WHERE p.game_id = games.id)";
 
 export interface JoinResult {
   game: PublicGame;
@@ -205,12 +288,14 @@ export interface CreateGameInput {
   sport_id: unknown;
   date: unknown;
   time: unknown;
+  capacity?: unknown;
+  accepted_levels: unknown;
   player: PlayerInput;
 }
 
 /**
- * Abre un partido: asigna la primera cancha libre del turno y deja el encuentro
- * `abierto` con el jugador que lo creó. Si el turno ya se ocupó, lanza turno_ocupado.
+ * Abre un partido sin cancha asignada. Solo se permite si en ese momento queda
+ * al menos una cancha libre en el turno; si no, lanza turno_ocupado.
  */
 export async function createGame(
   db: Db,
@@ -220,29 +305,29 @@ export async function createGame(
 ): Promise<JoinResult> {
   const sportId = typeof input.sport_id === "string" ? input.sport_id : "";
   const sport = await loadSport(db, sportId);
-  const player = validatePlayer(input.player, await loadLevels(db, sport.id));
+  const sportLevels = await loadLevels(db, sport.id);
+  const player = validatePlayer(input.player, sportLevels);
+  const capacity = validateCapacity(input.capacity, parseIntList(sport.match_sizes, 2, 4));
+  const accepted = validateAcceptedLevels(input.accepted_levels, sportLevels, player.level);
 
   const { date, time } = input;
   if (!isDate(date) || !isTime(time)) {
     throw new MatchError("datos_invalidos", "Elige un día y una hora.", "date");
   }
   if (!isDateBookable(date, now)) {
-    throw new MatchError(
-      "turno_cerrado",
-      `Solo se puede agendar hasta el ${lastBookableDate(now)}.`,
-    );
+    throw new MatchError("turno_cerrado", `Solo se puede agendar hasta el ${lastBookableDate(now)}.`);
   }
   if (!isSlotOpen(date, time, now)) {
     throw new MatchError("turno_cerrado", "Esa hora ya pasó. Elige otra.");
   }
 
-  const candidates = (await loadCourts(db, sport.id)).filter((c) => courtHasSlot(c, date, time));
-  if (candidates.length === 0) {
+  const courtIds = await slotCourtIds(db, sport.id, date, time);
+  if (courtIds.length === 0) {
     throw new MatchError("turno_invalido", "No hay canchas para esa hora. Elige otra.");
   }
-  const courtIds = candidates.map((c) => c.id);
+  const [freeSql, freeParams] = firstFreeCourtSql(courtIds, date, time);
 
-  // Reintenta solo si chocó el ID generado (muy improbable).
+  // Reintenta solo si chocó un ID generado (muy improbable).
   for (let attempt = 0; attempt < 3; attempt++) {
     const gameId = newId("E");
     const playerId = newId("J");
@@ -251,23 +336,16 @@ export async function createGame(
       const [gameRes] = await db.batch([
         db
           .prepare(
-            `INSERT INTO games (id, venue_id, sport_id, court_id, date, time, capacity, status)
-             SELECT ?, c.venue_id, c.sport_id, c.id, ?, ?, ?, 'abierto'
-             FROM courts c
-             WHERE c.id IN (${placeholders(courtIds.length)})
-               AND NOT EXISTS (
-                 SELECT 1 FROM games g
-                 WHERE g.court_id = c.id AND g.date = ? AND g.time = ? AND g.status <> 'cancelado')
-             ORDER BY c.name, c.id
-             LIMIT 1`,
+            `INSERT INTO games
+               (id, venue_id, sport_id, court_id, date, time, capacity, accepted_levels, status)
+             SELECT ?, ?, ?, NULL, ?, ?, ?, ?, 'abierto'
+             WHERE ${freeSql} IS NOT NULL`,
           )
-          .bind(gameId, date, time, sport.players_per_match, ...courtIds, date, time),
-        db
-          .prepare(insertPlayerSql("EXISTS (SELECT 1 FROM games WHERE id = ?)"))
-          .bind(...playerValues(playerId, gameId, visitorId, player, token), gameId),
+          .bind(gameId, sport.venue_id, sport.id, date, time, capacity, accepted.join(","), ...freeParams),
+        insertPlayer(db, "EXISTS (SELECT 1 FROM games WHERE id = ?)", [gameId], playerId, gameId, visitorId, player, token),
       ]);
       if (!gameRes || gameRes.meta.changes === 0) {
-        throw new MatchError("turno_ocupado", "Esa hora se acaba de ocupar. Elige otra.");
+        throw new MatchError("turno_ocupado", "Ya no quedan canchas libres a esa hora. Elige otra.");
       }
       return {
         game: await publicGame(db, gameId, visitorId),
@@ -276,13 +354,8 @@ export async function createGame(
         notices: [{ event: "partido_publicado", game_id: gameId, player_ids: [playerId] }],
       };
     } catch (err) {
-      if (err instanceof MatchError) throw err;
-      if (!isUniqueViolation(err)) throw err;
-      // Otro encuentro tomó la última cancha justo a la vez.
-      if (/games\.court_id/.test((err as Error).message)) {
-        throw new MatchError("turno_ocupado", "Esa hora se acaba de ocupar. Elige otra.");
-      }
-      // Si no, chocó un ID: se reintenta con otro.
+      if (err instanceof MatchError || !isUniqueViolation(err)) throw err;
+      // Chocó un ID: se reintenta con otro.
     }
   }
   throw new Error("No se pudo generar un ID único para el encuentro");
@@ -293,8 +366,9 @@ export async function createGame(
 // ---------------------------------------------------------------
 
 /**
- * Suma un jugador a un encuentro abierto. Al completarse la capacidad, el
- * encuentro pasa a `confirmado` en la misma transacción.
+ * Suma un jugador a un encuentro abierto. Al completarse la capacidad, en la
+ * misma transacción se asigna la primera cancha libre y el encuentro pasa a
+ * `confirmado`; si no queda cancha, pasa a `sin_cancha`.
  */
 export async function joinGame(
   db: Db,
@@ -312,6 +386,14 @@ export async function joinGame(
     throw new MatchError("turno_cerrado", "Ese partido ya comenzó.");
   }
   const player = validatePlayer(input, await loadLevels(db, game.sport_id));
+  const accepted = parseIntList(game.accepted_levels, 1, 5);
+  if (!accepted.includes(player.level)) {
+    throw new MatchError(
+      "nivel_no_aceptado",
+      `Este partido busca jugadores de ${levelsText(accepted)}.`,
+      "level",
+    );
+  }
 
   const member = await db
     .prepare("SELECT 1 AS x FROM players WHERE game_id = ? AND visitor_id = ?")
@@ -319,24 +401,33 @@ export async function joinGame(
     .first();
   if (member) throw new MatchError("ya_inscrito", "Ya estás en ese partido.");
 
+  const courtIds = await slotCourtIds(db, game.sport_id, game.date, game.time);
+  const [freeSql, freeParams] = firstFreeCourtSql(courtIds, game.date, game.time);
+
   const playerId = newId("J");
   const token = newToken();
   let inserted: number;
   try {
     const [ins] = await db.batch([
+      insertPlayer(
+        db,
+        `EXISTS (SELECT 1 FROM games WHERE id = ? AND status = 'abierto' AND ${PLAYER_COUNT} < capacity)`,
+        [gameId],
+        playerId, gameId, visitorId, player, token,
+      ),
+      // Completo y con cancha libre: se confirma con la primera cancha libre.
       db
         .prepare(
-          insertPlayerSql(`EXISTS (
-            SELECT 1 FROM games g
-            WHERE g.id = ? AND g.status = 'abierto'
-              AND (SELECT count(*) FROM players p WHERE p.game_id = g.id) < g.capacity)`),
+          `UPDATE games SET status = 'confirmado', court_id = ${freeSql}
+           WHERE id = ? AND status = 'abierto' AND ${PLAYER_COUNT} >= capacity
+             AND ${freeSql} IS NOT NULL`,
         )
-        .bind(...playerValues(playerId, gameId, visitorId, player, token), gameId),
+        .bind(...freeParams, gameId, ...freeParams),
+      // Completo y sin cancha libre: no se confirma.
       db
         .prepare(
-          `UPDATE games SET status = 'confirmado'
-           WHERE id = ? AND status = 'abierto'
-             AND (SELECT count(*) FROM players p WHERE p.game_id = games.id) >= capacity`,
+          `UPDATE games SET status = 'sin_cancha'
+           WHERE id = ? AND status = 'abierto' AND ${PLAYER_COUNT} >= capacity`,
         )
         .bind(gameId),
     ]);
@@ -358,6 +449,8 @@ export async function joinGame(
   ];
   if (view.status === "confirmado") {
     notices.push({ event: "partido_confirmado", game_id: gameId, player_ids: all });
+  } else if (view.status === "sin_cancha") {
+    notices.push({ event: "partido_sin_cancha", game_id: gameId, player_ids: all });
   }
   return { game: view, player_id: playerId, cancel_token: token, notices };
 }
@@ -368,9 +461,9 @@ export async function joinGame(
 
 export interface CancelResult {
   game_id: string;
-  /** El encuentro quedó sin jugadores y se eliminó: la cancha está libre. */
+  /** El encuentro quedó sin jugadores y se eliminó. */
   game_deleted: boolean;
-  /** Estaba confirmado y volvió a abierto. */
+  /** Estaba confirmado o sin cancha y volvió a abierto (sin cancha asignada). */
   reopened: boolean;
   notices: PendingNotice[];
 }
@@ -397,11 +490,11 @@ async function cancelPlayer(db: Db, player: PlayerRef, now: LocalNow): Promise<C
         "DELETE FROM games WHERE id = ? AND NOT EXISTS (SELECT 1 FROM players WHERE game_id = ?)",
       )
       .bind(game.id, game.id),
+    // Vuelve a abierto y libera la cancha.
     db
       .prepare(
-        `UPDATE games SET status = 'abierto'
-         WHERE id = ? AND status = 'confirmado'
-           AND (SELECT count(*) FROM players p WHERE p.game_id = games.id) < capacity`,
+        `UPDATE games SET status = 'abierto', court_id = NULL
+         WHERE id = ? AND status IN ('confirmado', 'sin_cancha') AND ${PLAYER_COUNT} < capacity`,
       )
       .bind(game.id),
   ]);
@@ -452,17 +545,18 @@ export async function cancelByToken(db: Db, token: string, now: LocalNow): Promi
 
 export interface SearchInput {
   sport_id: unknown;
+  /** Nivel del jugador que busca. */
+  level: unknown;
   date_from?: unknown;
   date_to?: unknown;
   time_from?: unknown;
   time_to?: unknown;
-  levels?: unknown;
 }
 
 /**
- * Encuentros abiertos del deporte (dentro de un lugar) en el rango de fechas y
- * horas, donde algún jugador tiene uno de los niveles pedidos. Excluye los
- * encuentros en que ya está el visitante y los turnos cerrados.
+ * Encuentros a los que el jugador puede unirse: abiertos, con cupo, en turno
+ * vigente, que aceptan su nivel y en los que no está inscrito. Filtra por
+ * deporte (dentro de un lugar) y por rangos de fechas y horas.
  */
 export async function searchGames(
   db: Db,
@@ -473,6 +567,11 @@ export async function searchGames(
   const sportId = typeof input.sport_id === "string" ? input.sport_id : "";
   await loadSport(db, sportId);
 
+  const level = Number(input.level);
+  if (!Number.isInteger(level) || level < 1 || level > 5) {
+    throw new MatchError("datos_invalidos", "Elige tu nivel de juego.", "level");
+  }
+
   const last = lastBookableDate(now);
   const from = isDate(input.date_from) && input.date_from > now.date ? input.date_from : now.date;
   const to = isDate(input.date_to) && input.date_to < last ? input.date_to : last;
@@ -482,24 +581,17 @@ export async function searchGames(
     throw new MatchError("datos_invalidos", "Revisa el rango: el final está antes del inicio.");
   }
 
-  const rawLevels = Array.isArray(input.levels) ? input.levels : [1, 2, 3, 4, 5];
-  const levels = [...new Set(rawLevels.map(Number))].filter((n) => Number.isInteger(n) && n >= 1 && n <= 5);
-  if (levels.length === 0) {
-    throw new MatchError("datos_invalidos", "Elige al menos un nivel.", "levels");
-  }
-
   const { results } = await db
     .prepare(
-      `SELECT g.id, g.date, g.time, g.court_id, g.capacity, g.status FROM games g
-       WHERE g.sport_id = ? AND g.status = 'abierto'
-         AND g.date BETWEEN ? AND ? AND g.time BETWEEN ? AND ?
-         AND EXISTS (SELECT 1 FROM players p
-                     WHERE p.game_id = g.id AND p.level IN (${placeholders(levels.length)}))
-         AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND p.visitor_id = ?)
-       ORDER BY g.date, g.time, g.id`,
+      `SELECT ${GAME_COLUMNS} FROM games
+       WHERE sport_id = ? AND status = 'abierto'
+         AND date BETWEEN ? AND ? AND time BETWEEN ? AND ?
+         AND (',' || accepted_levels || ',') LIKE ?
+         AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id = games.id AND p.visitor_id = ?)
+       ORDER BY date, time, rowid`,
     )
-    .bind(sportId, from, to, t1, t2, ...levels, visitorId ?? "")
-    .all<{ id: string; date: string; time: string; court_id: string; capacity: number; status: "abierto" }>();
+    .bind(sportId, from, to, t1, t2, `%,${level},%`, visitorId ?? "")
+    .all<GameRow>();
 
   const open = results.filter((g) => isSlotOpen(g.date, g.time, now));
   return (await toPublicGames(db, open, visitorId)).filter((g) => g.missing > 0);
