@@ -137,7 +137,8 @@ npm run dev          # wrangler dev en http://localhost:8787
 npm run check        # genera tipos (wrangler types) y revisa con tsc
 ```
 
-- `wrangler.jsonc` tiene un `database_id` de marcador. Antes del primer despliegue se crea la base con `wrangler d1 create peloteo` y se reemplaza por el ID real.
+- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`.
+- Despliegue: `npx wrangler deploy`. Dirección pública: https://peloteo.peloteo.workers.dev
 - Para empezar de cero en local, borrar `.wrangler/state` y volver a `npm run db:migrate`.
 - `GET /api/health` devuelve el conteo de registros; sirve para comprobar que el Worker y D1 responden.
 - La migración `0001_init.sql` incluye los datos de ejemplo del prototipo. Antes de producción, decidir si se eliminan con una migración posterior.

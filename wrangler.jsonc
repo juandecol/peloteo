@@ -14,9 +14,8 @@
     {
       "binding": "DB",
       "database_name": "peloteo",
-      // Marcador para desarrollo local. Antes de desplegar se reemplaza
-      // por el ID real que entrega `wrangler d1 create peloteo`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Base creada con `wrangler d1 create peloteo` (región ENAM).
+      "database_id": "5ef5a640-578f-409b-be4e-a162a1f5ab25",
       "migrations_dir": "migrations"
     }
   ],
