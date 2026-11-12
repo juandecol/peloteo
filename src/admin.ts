@@ -17,15 +17,18 @@ import {
 import {
   cancelGame,
   ConfigError,
+  createBlock,
   createCourt,
   createSport,
   createVenue,
+  deleteBlock,
   deleteCourt,
   deleteSport,
   deleteVenue,
   getCourt,
   getSport,
   getVenue,
+  listBlocks,
   listCourts,
   listGames,
   listSports,
@@ -255,6 +258,31 @@ export function adminRoutes(options: AppOptions = {}) {
   api.delete("/courts/:id", async (c) =>
     finishDelete(c, await deleteCourt(c.env.DB, c.req.param("id"), confirmFlag(c), today(c))),
   );
+
+  // Bloqueos de una cancha
+  api.get("/courts/:id/blocks", async (c) => c.json(await listBlocks(c.env.DB, c.req.param("id"), today(c))));
+  api.post("/courts/:id/blocks", async (c) => {
+    const r = await createBlock(c.env.DB, c.req.param("id"), await readJson(c), confirmFlag(c), today(c));
+    if (!r.created) {
+      return c.json(
+        {
+          error:
+            r.games.length === 1
+              ? "Hay 1 encuentro confirmado en ese horario. Confirma para cancelarlo y bloquear."
+              : `Hay ${r.games.length} encuentros confirmados en ese horario. Confirma para cancelarlos y bloquear.`,
+          code: "requiere_confirmacion",
+          games: r.games,
+        },
+        409,
+      );
+    }
+    await deliverNotices(c.env.DB, r.notices);
+    return c.json({ block: r.block, cancelled_games: r.cancelled_games }, 201);
+  });
+  api.delete("/blocks/:id", async (c) => {
+    await deleteBlock(c.env.DB, c.req.param("id"));
+    return c.json({ deleted: true });
+  });
 
   api.get("/games", async (c) => c.json(await listGames(c.env.DB, today(c), c.req.query("from"))));
   api.post("/games/:id/cancel", async (c) => {

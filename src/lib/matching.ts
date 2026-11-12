@@ -21,7 +21,8 @@ import {
 import type { PendingNotice } from "./notify.ts";
 import { isUniqueViolation, newId, newToken, placeholders, type Db, type DbStatement } from "./db.ts";
 import {
-  hasNotStarted,
+  canStillCancel,
+  CANCEL_DEADLINE_MINUTES,
   isDate,
   isDateBookable,
   isSlotOpen,
@@ -221,8 +222,16 @@ async function slotCourtIds(db: Db, sportId: string, date: string, time: string)
 }
 
 /**
- * Subconsulta SQL que devuelve la primera cancha libre (sin encuentro confirmado)
- * entre las indicadas, para la fecha y hora dadas. Devuelve [sql, parámetros].
+ * Fin del turno en SQL ("HH:MM"): hora de inicio más la duración de la cancha c.
+ * time() da la vuelta a medianoche, así que un fin a las 00:00 se escribe 24:00.
+ */
+const SLOT_END_SQL = `CASE WHEN time(?, '+' || c.slot_minutes || ' minutes') = '00:00:00' THEN '24:00'
+  ELSE substr(time(?, '+' || c.slot_minutes || ' minutes'), 1, 5) END`;
+
+/**
+ * Subconsulta SQL que devuelve la primera cancha libre entre las indicadas para
+ * la fecha y hora dadas: sin encuentro confirmado y sin un bloqueo que se cruce
+ * con el turno. Devuelve [sql, parámetros].
  */
 function firstFreeCourtSql(courtIds: string[], date: string, time: string): [string, unknown[]] {
   if (courtIds.length === 0) return ["(SELECT NULL)", []];
@@ -232,9 +241,12 @@ function firstFreeCourtSql(courtIds: string[], date: string, time: string): [str
         AND NOT EXISTS (
           SELECT 1 FROM games g
           WHERE g.court_id = c.id AND g.date = ? AND g.time = ? AND g.status = 'confirmado')
+        AND NOT EXISTS (
+          SELECT 1 FROM court_blocks b
+          WHERE b.court_id = c.id AND b.date = ? AND b.end_time > ? AND b.start_time < ${SLOT_END_SQL})
       ORDER BY c.name, c.id
       LIMIT 1)`,
-    [...courtIds, date, time],
+    [...courtIds, date, time, date, time, time, time],
   ];
 }
 
@@ -468,8 +480,11 @@ async function cancelPlayer(db: Db, player: PlayerRef, now: LocalNow): Promise<C
   if (game.status === "cancelado") {
     throw new MatchError("encuentro_cancelado", "Ese partido fue cancelado.");
   }
-  if (!hasNotStarted(game.date, game.time, now)) {
-    throw new MatchError("cancelacion_cerrada", "Ese partido ya comenzó; no se puede cancelar.");
+  if (!canStillCancel(game.date, game.time, now)) {
+    throw new MatchError(
+      "cancelacion_cerrada",
+      `Ya no se puede cancelar: el plazo termina ${CANCEL_DEADLINE_MINUTES / 60} hora antes del inicio.`,
+    );
   }
 
   const [del, gameDel, reopen] = await db.batch([

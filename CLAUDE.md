@@ -54,6 +54,8 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **login_attempts** (intentos fallidos de login del administrador): `id`, `username`, `ip`, `created_at`. Se usa para aplicar el límite de intentos.
 
+**court_blocks** (bloqueos de canchas): `id` (prefijo `B-`), `court_id`, `date`, `start_time`, `end_time`, `reason` (opcional, por ejemplo "Reserva por teléfono"), `created_at`.
+
 ## Reglas de negocio
 
 - **Turnos:** cada cancha genera turnos desde `open_time` mientras el turno completo termine antes de `close_time`. Solo canchas `operativa`, en sus días de operación y dentro de su rango de fechas.
@@ -64,7 +66,8 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Unirse:** otro jugador puede sumarse a un encuentro `abierto` si su nivel está entre los `accepted_levels`. Al completarse `capacity` se asigna, en la misma operación, la primera cancha libre del turno (por nombre y luego ID) y el encuentro pasa a `confirmado`; se avisa a todos.
 - **Sin cancha:** si al completarse ya no queda cancha libre, el encuentro no se confirma: pasa a `sin_cancha` (completo, sin cancha, no admite más jugadores), se avisa a los jugadores y se les ofrecen otros turnos.
 - **Búsqueda:** por deporte, lugar, rango de fechas, rango de horas y el nivel del jugador. Devuelve solo encuentros a los que ese jugador puede unirse: `abierto`, con cupo, turno vigente, su nivel entre los aceptados y sin estar ya inscrito.
-- **Cancelar:** un jugador puede liberar su cupo. Si el encuentro queda sin jugadores se elimina; si estaba `confirmado` o `sin_cancha` vuelve a `abierto` sin cancha (la cancha se libera) y se avisa al resto.
+- **Cancelar:** un jugador puede liberar su cupo hasta 1 hora antes del inicio del encuentro; después, la opción no está disponible (ni en "Mis partidos" ni con el enlace del aviso). Si el encuentro queda sin jugadores se elimina; si estaba `confirmado` o `sin_cancha` vuelve a `abierto` sin cancha (la cancha se libera) y se avisa al resto.
+- **Bloqueos:** el administrador puede bloquear una cancha en una fecha y un rango de horas, con un motivo opcional (por ejemplo, una reserva hecha por otro canal). Un turno de esa cancha que se cruce con el bloqueo, aunque sea en parte, no se ofrece ni se asigna: la cancha no cuenta como libre ni para abrir partido ni al confirmarse. Si al crear el bloqueo ya hay un encuentro confirmado en esa cancha cuyo turno se cruza, el sistema advierte y pide confirmación; si se confirma, el encuentro pasa a `cancelado` y se avisa a sus jugadores (el aviso real llega en la etapa 5). Los encuentros abiertos no tienen cancha y no se ven afectados al crear el bloqueo.
 - **Cancelación por el administrador:** el administrador puede cancelar cualquier encuentro en cualquier momento. El encuentro no se borra: pasa a `cancelado`, la cancha queda libre y se avisa a sus jugadores.
 - **Concurrencia:** crear y unirse deben validarse en el servidor dentro de una sola operación. Si el turno ya se ocupó, responder con un error claro para que la interfaz ofrezca otra hora.
 - **Privacidad:** el contacto de un jugador solo se entrega a quienes comparten con él un encuentro confirmado. Las respuestas públicas solo incluyen iniciales y nivel.
@@ -81,7 +84,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Usuario inicial `admin` / `admin`, creado por la migración con `must_change_password` activo: el sistema obliga a cambiarla en el primer ingreso.
 - Sesión en cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con expiración. Límite de 5 intentos fallidos; al llegar a 5 se bloquea el login de ese usuario e IP por 15 minutos, registrado en `login_attempts`.
 - **Preparado para 2FA:** el login ya es un flujo de dos pasos (`/login` y `/login/2fa`). Mientras `totp_enabled` sea falso, el segundo paso se omite. No implementar TOTP todavía, pero no cerrar el diseño.
-- Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`).
+- Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`). Dentro de cada cancha, sus bloqueos: crear, ver (de hoy en adelante) y quitar.
 - Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
 - **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros confirmados en esa cancha (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
 - **Eliminación lógica:** lugares, deportes y canchas eliminados se marcan con `deleted_at` (migración `0003`) y dejan de aparecer en todas partes; así los encuentros cancelados se conservan con sus referencias. Eliminar un lugar elimina sus deportes y canchas; eliminar un deporte, sus canchas.
@@ -102,6 +105,7 @@ Públicas:
 
 Administración (requieren sesión): `POST /admin/login`, `POST /admin/login/2fa`, `POST /admin/logout`, y CRUD bajo `/admin/api/venues`, `/sports`, `/courts`, `/games`.
 - También: `GET /admin/session` (estado de la sesión para la interfaz), `POST /admin/password` (cambio de contraseña, permitido aunque `must_change_password` esté activo), `GET /admin/api/meta` (listas para los formularios) y `POST /admin/api/games/:id/cancel`.
+- Bloqueos: `GET` y `POST /admin/api/courts/:id/blocks` (el POST responde 409 si hay encuentros confirmados afectados; se repite con `?confirm=1`) y `DELETE /admin/api/blocks/:id`.
 - Eliminar (`DELETE`) con encuentros futuros afectados responde 409 con la lista; se repite con `?confirm=1` para cancelarlos y eliminar.
 - Las pantallas de configuración están en `public/admin/` y se sirven en `/admin/`. Los estilos compartidos, tomados del prototipo, en `public/styles.css`.
 
@@ -153,7 +157,7 @@ npm run check        # genera tipos (wrangler types) y revisa con tsc
 - Las pruebas usan el runner de Node (`node --test`) y SQLite incorporado (`node:sqlite`), sin dependencias extra. `test/helpers/db.ts` imita la API de D1 (incluido `batch` transaccional) y aplica las migraciones reales.
 - Los imports entre archivos TypeScript llevan extensión `.ts` para que Node los ejecute directamente. `tsc` revisa `src/`; las pruebas no se revisan con `tsc` (no hay tipos de Node instalados).
 
-- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0003`.
+- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0003`; falta `0004` (bloqueos).
 - La base local se identifica por el `database_id`: si cambia, queda una base local vacía y hay que volver a `npm run db:migrate`.
 - Despliegue: automático con Workers Builds en cada push a `main` (aparece como check "Workers Builds: peloteo" en GitHub). Hacer push equivale a desplegar en producción. Despliegue manual: `npx wrangler deploy`. Dirección pública: https://peloteo.peloteo.workers.dev
 - Las migraciones no se aplican solas: aplicar las nuevas a la base remota antes del push que trae el código que las necesita.
@@ -174,7 +178,8 @@ Lógica de la etapa 2 (`src/lib/`):
 - `matching.ts`: abrir partido, unirse, cancelar (por visitante o por token) y búsqueda. Cada escritura es un solo `db.batch()` con condiciones en SQL; los errores son `MatchError` con un `code` y un mensaje para la interfaz. Las funciones no llaman a `notify()`: devuelven `notices` (evento y jugadores) para que la ruta los envíe.
 - La primera cancha libre se elige por nombre y luego por ID, al confirmarse el encuentro.
 - Los jugadores de un encuentro se ordenan por orden de llegada (`rowid`).
-- Cancelar un cupo solo se permite antes de la hora de inicio (supuesto; ver Decisiones pendientes).
+- Cancelar un cupo solo se permite hasta 1 hora antes del inicio (`canStillCancel` en `time.ts`).
+- Los bloqueos se respetan en la vista (`availability.ts`) y en la asignación de cancha, que lo verifica en SQL dentro de la misma transacción.
 - "Cupo cancelado" se avisa al resto solo cuando un encuentro `confirmado` o `sin_cancha` vuelve a abierto.
 
 ## Forma de trabajo
@@ -191,8 +196,6 @@ Marcar aquí la respuesta cuando se defina:
 - Encuentro `sin_cancha`: ¿cómo se "ofrecen otros turnos"? (Supuesto actual: el aviso sugiere turnos con canchas libres y los jugadores deciden; el encuentro queda `sin_cancha` hasta que cancelen.) ¿Se confirma solo si se libera una cancha en ese turno?
 - ¿Se muestran encuentros abiertos de un turno que ya no tiene canchas libres? (Supuesto actual: sí, pero al completarse quedarán `sin_cancha`.)
 - ¿Quien abre debe incluir su propio nivel entre los aceptados? (Supuesto actual: sí.)
-- ¿Los clubes reservan canchas por otros canales? Si es así, definir cómo se bloquean esos horarios.
-- ¿Cuánto tiempo antes puede cancelarse un cupo? (Supuesto actual: hasta la hora de inicio.)
 - Proveedor de correo y dominio definitivo.
 - PBKDF2 con 100.000 iteraciones podría superar el límite de CPU del plan gratuito de Workers (10 ms por solicitud) en el login. Verificar al desplegar; si falla, bajar las iteraciones (el formato del hash las guarda, así que se puede migrar sin perder la contraseña).
 
@@ -210,3 +213,5 @@ Decididas (2026-11-12):
 - Jugadores por partido: cada deporte define las cantidades permitidas (tenis 2; pádel 2 o 4) y quien abre elige una.
 - Cancha: no se retiene al abrir; se asigna la primera libre al completarse. Solo se abre si queda al menos una cancha libre. Si al completarse no hay cancha, el encuentro no se confirma (`sin_cancha`). La restricción única aplica solo a confirmados (migración `0002`).
 - Niveles: quien abre define los niveles aceptados; solo se unen jugadores de esos niveles; la búsqueda muestra solo encuentros a los que el jugador puede unirse.
+- Bloqueos: el administrador bloquea una cancha por fecha y rango de horas, con motivo opcional; el turno bloqueado no se ofrece ni se asigna; si hay un encuentro confirmado, se advierte y, al confirmar, se cancela (migración `0004`).
+- Cancelación de un cupo: hasta 1 hora antes del inicio.

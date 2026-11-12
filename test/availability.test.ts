@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  blockCoversSlot,
   courtSlots,
   dayAvailability,
   getDayAvailability,
@@ -142,4 +143,55 @@ test("resumen del mes: solo días agendables y marca los que tienen encuentros a
   assert.ok(nov.every((d) => d.available));
   const dec = await getMonthSummary(db, "D-TEN01", "2026-12", now);
   assert.deepEqual(dec.map((d) => d.date), ["2026-12-01"]);
+});
+
+// ---------------------------------------------------------------
+// Bloqueos
+// ---------------------------------------------------------------
+
+const block = (start_time: string, end_time: string, court_id = "C-AAAAA", date = "2026-11-17") => ({
+  court_id,
+  date,
+  start_time,
+  end_time,
+});
+
+test("bloqueo: cubre los turnos que se cruzan con su rango, aunque sea en parte", () => {
+  const b = block("18:30", "20:00");
+  assert.ok(!blockCoversSlot(b, "2026-11-17", "17:00", 60)); // 17:00-18:00
+  assert.ok(!blockCoversSlot(b, "2026-11-17", "17:30", 60)); // termina justo cuando empieza el bloqueo
+  assert.ok(blockCoversSlot(b, "2026-11-17", "18:00", 60)); // 18:00-19:00 se cruza
+  assert.ok(blockCoversSlot(b, "2026-11-17", "19:00", 60));
+  assert.ok(!blockCoversSlot(b, "2026-11-17", "20:00", 60)); // empieza justo al terminar
+  assert.ok(!blockCoversSlot(b, "2026-11-17", "17:00", 90)); // 17:00-18:30 termina justo al empezar
+  assert.ok(blockCoversSlot(b, "2026-11-17", "17:30", 90)); // 17:30-19:00 se cruza
+  assert.ok(!blockCoversSlot(b, "2026-11-18", "18:00", 60)); // otro día
+});
+
+test("día: una cancha bloqueada no cuenta como libre", () => {
+  const courts = [court({ id: "C-1" }), court({ id: "C-2", name: "Cancha 2" })];
+  const slots = dayAvailability(courts, [], "2026-11-17", now, [block("18:00", "20:00", "C-1")]);
+  assert.equal(slots.find((s) => s.time === "17:00")!.free_courts, 2);
+  assert.equal(slots.find((s) => s.time === "18:00")!.free_courts, 1);
+  assert.equal(slots.find((s) => s.time === "19:00")!.free_courts, 1);
+  assert.equal(slots.find((s) => s.time === "20:00")!.free_courts, 2);
+});
+
+test("día: si todas las canchas están bloqueadas, el turno no se ofrece", () => {
+  const slots = dayAvailability([court({ id: "C-1" })], [], "2026-11-17", now, [block("08:00", "10:00", "C-1")]);
+  const s8 = slots.find((s) => s.time === "08:00")!;
+  assert.equal(s8.free_courts, 0);
+  assert.equal(s8.full, true);
+});
+
+test("resumen del mes: un día bloqueado entero queda no disponible", async () => {
+  const db = emptyGamesDb();
+  db.exec(`INSERT INTO court_blocks (id, court_id, date, start_time, end_time) VALUES
+           ('B-AAAAA', 'C-T1SM1', '2026-11-20', '00:00', '24:00'),
+           ('B-BBBBB', 'C-T2SM2', '2026-11-20', '00:00', '24:00')`);
+  const nov = await getMonthSummary(db, "D-TEN01", "2026-11", now);
+  assert.equal(nov.find((d) => d.date === "2026-11-20")!.available, false);
+  assert.equal(nov.find((d) => d.date === "2026-11-21")!.available, true);
+  const day = await getDayAvailability(db, "D-TEN01", "2026-11-20", now);
+  assert.ok(day.every((s) => s.free_courts === 0));
 });

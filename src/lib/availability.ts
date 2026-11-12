@@ -102,6 +102,30 @@ export function courtSlots(court: Court, date: string): string[] {
   return out;
 }
 
+/** Bloqueo de una cancha en una fecha y rango de horas. */
+export interface Block {
+  court_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+}
+
+/**
+ * true si el turno que empieza a "time" y dura "slotMinutes" se cruza con el
+ * bloqueo. Basta un cruce parcial: un turno 18:00-19:30 queda bloqueado por un
+ * bloqueo de 19:00 a 20:00.
+ */
+export function blockCoversSlot(block: Block, date: string, time: string, slotMinutes: number): boolean {
+  if (block.date !== date) return false;
+  const start = toMinutes(time);
+  return toMinutes(block.start_time) < start + slotMinutes && toMinutes(block.end_time) > start;
+}
+
+/** true si algún bloqueo de la cancha cubre ese turno. */
+export function isSlotBlocked(blocks: Block[], court: Court, date: string, time: string): boolean {
+  return blocks.some((b) => b.court_id === court.id && blockCoversSlot(b, date, time, court.slot_minutes));
+}
+
 /** true si la cancha genera ese turno en esa fecha. */
 export function courtHasSlot(court: Court, date: string, time: string): boolean {
   return courtSlots(court, date).includes(time);
@@ -109,13 +133,15 @@ export function courtHasSlot(court: Court, date: string, time: string): boolean 
 
 /**
  * Turnos de un día para un deporte. Combina los turnos de sus canchas con los
- * encuentros vigentes de ese día. Omite los turnos cerrados.
+ * encuentros vigentes y los bloqueos de ese día. Omite los turnos cerrados.
+ * Una cancha bloqueada en un turno no cuenta como libre.
  */
 export function dayAvailability(
   courts: Court[],
   games: PublicGame[],
   date: string,
   now: LocalNow,
+  blocks: Block[] = [],
 ): Slot[] {
   if (!isDateBookable(date, now)) return [];
   const taken = new Set(
@@ -130,7 +156,7 @@ export function dayAvailability(
         slot = { time, free_courts: 0, open_games: [], full: false };
         slots.set(time, slot);
       }
-      if (!taken.has(court.id + "|" + time)) slot.free_courts++;
+      if (!taken.has(court.id + "|" + time) && !isSlotBlocked(blocks, court, date, time)) slot.free_courts++;
     }
   }
   for (const g of games) {
@@ -148,11 +174,12 @@ export function monthSummary(
   gamesByDate: Map<string, PublicGame[]>,
   month: string,
   now: LocalNow,
+  blocks: Block[] = [],
 ): DaySummary[] {
   return datesOfMonth(month)
     .filter((date) => isDateBookable(date, now))
     .map((date) => {
-      const slots = dayAvailability(courts, gamesByDate.get(date) ?? [], date, now);
+      const slots = dayAvailability(courts, gamesByDate.get(date) ?? [], date, now, blocks);
       const open = slots.reduce((n, s) => n + s.open_games.length, 0);
       return { date, available: slots.some((s) => !s.full), open_games: open };
     });
@@ -171,6 +198,19 @@ export async function loadCourts(db: Db, sportId: string): Promise<Court[]> {
     .prepare(`SELECT ${COURT_COLUMNS} FROM courts WHERE sport_id = ? AND deleted_at IS NULL ORDER BY name, id`)
     .bind(sportId)
     .all<Court>();
+  return results;
+}
+
+/** Bloqueos de las canchas de un deporte entre dos fechas. */
+export async function loadBlocks(db: Db, sportId: string, from: string, to: string): Promise<Block[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT b.court_id, b.date, b.start_time, b.end_time FROM court_blocks b
+       JOIN courts c ON c.id = b.court_id
+       WHERE c.sport_id = ? AND b.date BETWEEN ? AND ?`,
+    )
+    .bind(sportId, from, to)
+    .all<Block>();
   return results;
 }
 
@@ -256,7 +296,8 @@ export async function getDayAvailability(
   if (!isDateBookable(date, now)) return [];
   const courts = await loadCourts(db, sportId);
   const games = await loadGames(db, sportId, date, date, visitorId);
-  return dayAvailability(courts, games, date, now);
+  const blocks = await loadBlocks(db, sportId, date, date);
+  return dayAvailability(courts, games, date, now, blocks);
 }
 
 /** Resumen por día de un mes "YYYY-MM". */
@@ -268,7 +309,8 @@ export async function getMonthSummary(
 ): Promise<DaySummary[]> {
   const courts = await loadCourts(db, sportId);
   const games = await loadGames(db, sportId, month + "-01", month + "-31");
+  const blocks = await loadBlocks(db, sportId, month + "-01", month + "-31");
   const byDate = new Map<string, PublicGame[]>();
   for (const g of games) byDate.set(g.date, [...(byDate.get(g.date) ?? []), g]);
-  return monthSummary(courts, byDate, month, now);
+  return monthSummary(courts, byDate, month, now, blocks);
 }

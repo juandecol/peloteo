@@ -421,11 +421,28 @@ test("cancelar: con el token del enlace, desde otro dispositivo", async () => {
   await rejects(cancelByToken(db, "no-es-un-token", now), "cupo_no_existe");
 });
 
-test("cancelar: solo el propio cupo, y no después del inicio", async () => {
+test("cancelar: solo el propio cupo", async () => {
   const db = emptyGamesDb();
   const a = await createGame(db, tenis(), "V-1", now);
   await rejects(cancelByVisitor(db, a.game.id, "V-2", now), "cupo_no_existe");
-  await rejects(cancelByVisitor(db, a.game.id, "V-1", { date: DAY, minutes: 18 * 60 }), "cancelacion_cerrada");
+});
+
+test("cancelar: se puede hasta 1 hora antes del inicio; después, no", async () => {
+  const db = emptyGamesDb();
+  const a = await createGame(db, tenis({ sport_id: "D-PAD01", time: "18:30", capacity: 4 }), "V-1", now);
+  await joinGame(db, a.game.id, me(), "V-2", now);
+  await joinGame(db, a.game.id, me(), "V-3", now);
+  // 17:31: faltan 59 minutos.
+  await assert.rejects(cancelByVisitor(db, a.game.id, "V-2", { date: DAY, minutes: 17 * 60 + 31 }), (e: unknown) => {
+    assert.ok(e instanceof MatchError);
+    assert.equal(e.code, "cancelacion_cerrada");
+    assert.match(e.message, /1 hora antes/);
+    return true;
+  });
+  await rejects(cancelByToken(db, a.cancel_token, { date: DAY, minutes: 18 * 60 + 30 }), "cancelacion_cerrada");
+  // 17:30: falta 1 hora justa.
+  const r = await cancelByVisitor(db, a.game.id, "V-2", { date: DAY, minutes: 17 * 60 + 30 });
+  assert.equal(r.game_deleted, false);
 });
 
 test("cancelar: no aplica a encuentros cancelados por el administrador", async () => {
@@ -510,4 +527,47 @@ test("privacidad: las respuestas públicas solo traen iniciales y nivel", async 
     assert.ok(!text.includes(a.cancel_token), text);
   }
   assert.deepEqual(Object.keys(found[0]!.players[0]!).sort(), ["initials", "level"]);
+});
+
+// ---------------------------------------------------------------
+// Bloqueos
+// ---------------------------------------------------------------
+
+const blockCourt = (db: TestDb, id: string, court: string, start: string, end: string, date = DAY) =>
+  db.exec(`INSERT INTO court_blocks (id, court_id, date, start_time, end_time) VALUES ('${id}', '${court}', '${date}', '${start}', '${end}')`);
+
+test("bloqueos: no se puede abrir partido si todas las canchas del turno están bloqueadas", async () => {
+  const db = emptyGamesDb();
+  blockCourt(db, "B-AAAAA", "C-T1SM1", "17:30", "19:00");
+  blockCourt(db, "B-BBBBB", "C-T2SM2", "18:00", "18:30");
+  await rejects(createGame(db, tenis(), "V-1", now), "turno_ocupado");
+  // A las 19:00 la cancha 1 ya está libre.
+  await createGame(db, tenis({ time: "19:00" }), "V-1", now);
+});
+
+test("bloqueos: al completarse se asigna la primera cancha no bloqueada", async () => {
+  const db = emptyGamesDb();
+  const a = await createGame(db, tenis(), "V-1", now);
+  blockCourt(db, "B-AAAAA", "C-T1SM1", "18:30", "19:30"); // se cruza con 18:00-19:00
+  const b = await joinGame(db, a.game.id, me(), "V-2", now);
+  assert.equal(b.game.status, "confirmado");
+  assert.equal(b.game.court_id, "C-T2SM2");
+});
+
+test("bloqueos: si se bloquean todas las canchas antes de completarse, queda sin cancha", async () => {
+  const db = emptyGamesDb();
+  const a = await createGame(db, tenis(), "V-1", now);
+  blockCourt(db, "B-AAAAA", "C-T1SM1", "00:00", "24:00");
+  blockCourt(db, "B-BBBBB", "C-T2SM2", "18:00", "19:00");
+  const b = await joinGame(db, a.game.id, me(), "V-2", now);
+  assert.equal(b.game.status, "sin_cancha");
+});
+
+test("bloqueos: un bloqueo que termina a medianoche cubre el último turno del día", async () => {
+  const db = emptyGamesDb();
+  db.exec("UPDATE courts SET close_time = '24:00' WHERE sport_id = 'D-TEN01'");
+  blockCourt(db, "B-AAAAA", "C-T1SM1", "23:00", "24:00");
+  blockCourt(db, "B-BBBBB", "C-T2SM2", "23:30", "24:00");
+  await rejects(createGame(db, tenis({ time: "23:00" }), "V-1", now), "turno_ocupado");
+  await createGame(db, tenis({ time: "22:00" }), "V-1", now);
 });

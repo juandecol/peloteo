@@ -26,7 +26,8 @@
     session: null, // respuesta de /admin/session
     view: 'loading',
     venueId: null, sportId: null, courtId: null,
-    venues: [], venue: null, sports: [], sport: null, courts: [], court: null, games: [],
+    venues: [], venue: null, sports: [], sport: null, courts: [], court: null, games: [], blocks: [],
+    blockErr: '', blockAffected: null, blockDraft: null,
     surfaces: SURF_DEFAULT,
     err: '', confirm: null, affected: null, busy: false,
   };
@@ -78,7 +79,10 @@
       } else S.sport = null;
     } else if (v === 'courtForm') {
       if (!S.sport && S.sportId) { const a = await api('GET', '/admin/api/sports/' + S.sportId); S.sport = a.ok ? a.data : null; }
-      if (S.courtId) { const a = await api('GET', '/admin/api/courts/' + S.courtId); S.court = a.ok ? a.data : null; } else S.court = null;
+      if (S.courtId) {
+        const [a, b] = await Promise.all([api('GET', '/admin/api/courts/' + S.courtId), api('GET', '/admin/api/courts/' + S.courtId + '/blocks')]);
+        S.court = a.ok ? a.data : null; S.blocks = b.ok ? b.data : [];
+      } else { S.court = null; S.blocks = []; }
       const m = await api('GET', '/admin/api/meta'); if (m.ok && m.data.surfaces) S.surfaces = m.data.surfaces;
     } else if (v === 'games') {
       const r = await api('GET', '/admin/api/games'); if (r.ok) S.games = r.data;
@@ -90,7 +94,7 @@
     if (view === 'venues') { S.venueId = S.sportId = S.courtId = null; }
     if (view === 'venue') { S.sportId = S.courtId = null; }
     if (view === 'sport') { S.courtId = null; }
-    S.view = view; S.err = ''; S.confirm = null; S.affected = null;
+    S.view = view; S.err = ''; S.confirm = null; S.affected = null; S.blockErr = ''; S.blockAffected = null; S.blockDraft = null;
     render(); await load(); render(); window.scrollTo(0, 0);
   }
 
@@ -216,7 +220,31 @@
       '<label class="f" for="ct">Duración de cada turno</label><select id="ct" name="slot_minutes">' + [60, 90, 120].map((n) => '<option value="' + n + '"' + (Number(c.slot_minutes) === n ? ' selected' : '') + '>' + n + ' minutos</option>').join('') + '</select>' +
       '<div class="two"><div><label class="f" for="cf">Disponible desde <small>(opcional)</small></label><input id="cf" name="available_from" type="date" value="' + esc(c.available_from || '') + '"></div><div><label class="f" for="ch">Hasta <small>(opcional)</small></label><input id="ch" name="available_to" type="date" value="' + esc(c.available_to || '') + '"></div></div>' +
       errBox() + affectedBox(S.affected && S.affected.code === 'requiere_confirmacion' ? 'delConfirm' : null) +
-      '<div class="actions"><button class="btn" type="submit">Guardar cancha</button>' + (co ? delBtn('court', 'Eliminar cancha') : '') + '</div></form>';
+      '<div class="actions"><button class="btn" type="submit">Guardar cancha</button>' + (co ? delBtn('court', 'Eliminar cancha') : '') + '</div></form>' +
+      (co ? vBlocks() : '');
+  }
+
+  // Bloqueos de la cancha: fecha y rango de horas en que no se ofrece ni se asigna.
+  function vBlocks() {
+    const d = S.blockDraft || { date: '', start_time: '', end_time: '', reason: '' };
+    const list = S.blocks.length ? '<ul class="list">' + S.blocks.map((b) => {
+      const key = 'block:' + b.id;
+      return '<li class="card" style="margin:0"><p><strong>' + cap(fecha(b.date)) + ', ' + b.start_time + ' a ' + b.end_time + '</strong></p>' +
+        (b.reason ? '<p class="small">' + esc(b.reason) + '</p>' : '') +
+        '<div class="actions" style="margin-top:.5rem"><button type="button" class="btn danger sm" data-a="delBlock" data-id="' + esc(b.id) + '">' + (S.confirm === key ? 'Toca de nuevo para quitar' : 'Quitar bloqueo') + '</button></div></li>';
+    }).join('') + '</ul>' : '<p class="muted">No hay bloqueos de hoy en adelante.</p>';
+    const aff = S.blockAffected;
+    const affBox = aff ? '<div class="card warn" role="alert"><h3>' + esc(aff.error) + '</h3><ul>' +
+      aff.games.map((g) => '<li>' + cap(fecha(g.date)) + ', ' + g.time + ' · ' + plural(g.players, 'jugador', 'jugadores') + ' <span class="id">' + esc(g.id) + '</span></li>').join('') +
+      '</ul><div class="actions"><button type="button" class="btn danger" data-a="blockConfirm">Cancelar ' + plural(aff.games.length, 'encuentro', 'encuentros') + ' y bloquear</button><button type="button" class="btn ghost" data-a="blockDismiss">Volver</button></div></div>' : '';
+    return '<h3 id="bloqueos">Bloqueos</h3><p class="small muted">Por ejemplo, una reserva hecha por otro canal. En ese horario la cancha no se ofrece ni se asigna.</p>' + list +
+      '<div class="card"><h3>Nuevo bloqueo</h3><form data-f="block" novalidate>' +
+      '<label class="f" for="bd">Fecha</label><input id="bd" name="date" type="date" value="' + esc(d.date) + '" required>' +
+      '<div class="two"><div><label class="f" for="bs">Desde</label><input id="bs" name="start_time" type="time" value="' + esc(d.start_time) + '" required></div>' +
+      '<div><label class="f" for="be">Hasta</label><input id="be" name="end_time" type="time" value="' + esc(d.end_time) + '" required></div></div>' +
+      '<label class="f" for="br">Motivo <small>(opcional)</small></label><input id="br" name="reason" type="text" maxlength="200" placeholder="Reserva por teléfono" value="' + esc(d.reason) + '">' +
+      (S.blockErr ? '<p class="err" role="alert">' + esc(S.blockErr) + '</p>' : '') + affBox +
+      '<div class="actions"><button class="btn" type="submit">Bloquear</button></div></form></div>';
   }
 
   function vGames() {
@@ -332,6 +360,7 @@
       if (!r.ok) { fail(r); return; }
       toast('Deporte guardado.'); await go('sport', { sportId: r.data.id });
     },
+    async block(d) { await saveBlock(d, false); },
     async court(d) {
       const body = Object.assign({}, d, { days: d.days || [], slot_minutes: Number(d.slot_minutes), sport_id: S.sportId });
       const r = S.courtId ? await api('PUT', '/admin/api/courts/' + S.courtId, body) : await api('POST', '/admin/api/courts', body);
@@ -352,7 +381,29 @@
     await go(after);
   }
 
+  async function saveBlock(d, confirm) {
+    S.blockDraft = d;
+    const r = await api('POST', '/admin/api/courts/' + S.courtId + '/blocks' + (confirm ? '?confirm=1' : ''), d);
+    if (r.status === 409 && r.data.code === 'requiere_confirmacion') { S.blockAffected = r.data; S.blockErr = ''; render(); return; }
+    if (!r.ok) { S.blockErr = r.data.error || 'No se pudo bloquear.'; S.blockAffected = null; render(); return; }
+    toast(r.data.cancelled_games ? 'Cancha bloqueada. Se cancelaron ' + plural(r.data.cancelled_games, 'encuentro', 'encuentros') + '.' : 'Cancha bloqueada.');
+    S.blockDraft = null; S.blockErr = ''; S.blockAffected = null;
+    await load(); render();
+    const f = document.querySelector('form[data-f="block"]');
+    if (f) f.reset();
+  }
+
   const act = {
+    async blockConfirm() { if (S.blockDraft) await saveBlock(S.blockDraft, true); },
+    blockDismiss() { S.blockAffected = null; render(); },
+    async delBlock(d) {
+      const key = 'block:' + d.id;
+      if (S.confirm !== key) { S.confirm = key; render(); return; }
+      S.confirm = null;
+      const r = await api('DELETE', '/admin/api/blocks/' + encodeURIComponent(d.id));
+      if (!r.ok) { toast(r.data.error || 'No se pudo quitar.'); return; }
+      toast('Bloqueo quitado.'); await load(); render();
+    },
     go(d) {
       const ids = {};
       if ('venue' in d) ids.venueId = d.venue || null;

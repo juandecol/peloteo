@@ -459,3 +459,87 @@ test("encuentros: la lista del administrador incluye contactos y permite cancela
   assert.equal(slot.free_courts, 2);
   assert.equal((await t.req("POST", "/admin/api/games/E-NOPE1/cancel", {})).status, 404);
 });
+
+// ---------------------------------------------------------------
+// Bloqueos
+// ---------------------------------------------------------------
+
+test("bloqueos: crear, listar y quitar un bloqueo con motivo", async () => {
+  const t = await ready();
+  const r = await t.req("POST", "/admin/api/courts/C-T1SM1/blocks", {
+    date: "2026-11-17", start_time: "18:00", end_time: "20:00", reason: "Reserva por teléfono",
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  assert.match(r.json.block.id, /^B-[A-Z2-9]{5}$/);
+  assert.equal(r.json.cancelled_games, 0);
+  const list = (await t.req("GET", "/admin/api/courts/C-T1SM1/blocks")).json;
+  assert.deepEqual(list.map((b: any) => [b.date, b.start_time, b.end_time, b.reason]), [
+    ["2026-11-17", "18:00", "20:00", "Reserva por teléfono"],
+  ]);
+  // El turno de las 18:00 y el de las 19:00 pierden la cancha 1.
+  const slots = await getDayAvailability(t.db, "D-TEN01", "2026-11-17", t.now);
+  assert.equal(slots.find((s) => s.time === "18:00")!.free_courts, 1);
+  assert.equal(slots.find((s) => s.time === "20:00")!.free_courts, 2);
+
+  assert.equal((await t.req("DELETE", `/admin/api/blocks/${r.json.block.id}`)).status, 200);
+  assert.deepEqual((await t.req("GET", "/admin/api/courts/C-T1SM1/blocks")).json, []);
+  assert.equal((await t.req("DELETE", `/admin/api/blocks/${r.json.block.id}`)).status, 404);
+});
+
+test("bloqueos: valida fecha, horas y motivo", async () => {
+  const t = await ready();
+  const bad = async (body: unknown, field: string) => {
+    const r = await t.req("POST", "/admin/api/courts/C-T1SM1/blocks", body);
+    assert.equal(r.status, 400, JSON.stringify(r.json));
+    assert.equal(r.json.field, field);
+  };
+  await bad({ date: "2026-11-31", start_time: "18:00", end_time: "19:00" }, "date");
+  await bad({ date: "2026-11-15", start_time: "18:00", end_time: "19:00" }, "date"); // ayer
+  await bad({ date: "2026-11-17", start_time: "19:00", end_time: "18:00" }, "end_time");
+  await bad({ date: "2026-11-17", start_time: "18:00", end_time: "18:00" }, "end_time");
+  await bad({ date: "2026-11-17", start_time: "18:00", end_time: "19:00", reason: "x".repeat(201) }, "reason");
+  assert.equal((await t.req("POST", "/admin/api/courts/C-NOPE1/blocks", { date: "2026-11-17", start_time: "18:00", end_time: "19:00" })).status, 404);
+});
+
+test("bloqueos: con un encuentro confirmado en ese horario, advierte y pide confirmación", async () => {
+  const t = await ready();
+  const g = await confirmedAt(t); // tenis, cancha 1, martes 17 a las 18:00
+  const body = { date: "2026-11-17", start_time: "18:30", end_time: "19:30", reason: "Torneo" };
+
+  const first = await t.req("POST", "/admin/api/courts/C-T1SM1/blocks", body);
+  assert.equal(first.status, 409);
+  assert.equal(first.json.code, "requiere_confirmacion");
+  assert.deepEqual(first.json.games.map((x: any) => x.id), [g.game.id]);
+  assert.equal(t.db.count("SELECT count(*) AS n FROM court_blocks"), 0);
+  assert.equal(t.db.get<{ status: string }>("SELECT status FROM games WHERE id = ?", g.game.id)!.status, "confirmado");
+
+  const logs: string[] = [];
+  const orig = console.log;
+  console.log = (m: string) => logs.push(m);
+  let done;
+  try {
+    done = await t.req("POST", "/admin/api/courts/C-T1SM1/blocks?confirm=1", body);
+  } finally {
+    console.log = orig;
+  }
+  assert.equal(done.status, 201);
+  assert.equal(done.json.cancelled_games, 1);
+  assert.equal(t.db.get<{ status: string }>("SELECT status FROM games WHERE id = ?", g.game.id)!.status, "cancelado");
+  assert.equal(t.db.count("SELECT count(*) AS n FROM court_blocks"), 1);
+  assert.deepEqual(logs.map((l) => JSON.parse(l).aviso), ["encuentro_cancelado", "encuentro_cancelado"]);
+});
+
+test("bloqueos: no afectan encuentros de otras canchas, otros días ni otros horarios", async () => {
+  const t = await ready();
+  await confirmedAt(t, "18:00"); // cancha 1
+  const other = await confirmedAt(t, "18:00"); // cancha 2
+  assert.equal(other.game.court_id, "C-T2SM2");
+  for (const body of [
+    { date: "2026-11-17", start_time: "19:00", end_time: "21:00" }, // empieza cuando termina el turno
+    { date: "2026-11-18", start_time: "18:00", end_time: "19:00" }, // otro día
+  ]) {
+    assert.equal((await t.req("POST", "/admin/api/courts/C-T1SM1/blocks", body)).status, 201, JSON.stringify(body));
+  }
+  // Bloquear la cancha 3 (en mantención, sin encuentros) tampoco pide confirmación.
+  assert.equal((await t.req("POST", "/admin/api/courts/C-T3SM3/blocks", { date: "2026-11-17", start_time: "18:00", end_time: "19:00" })).status, 201);
+});

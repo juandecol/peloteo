@@ -111,8 +111,16 @@ export function isSlotOpen(date: string, time: string, now: LocalNow): boolean {
   return now.minutes <= toMinutes(time) + SLOT_GRACE_MINUTES;
 }
 
-/** true si el turno todavía no comienza (se usa para permitir cancelar un cupo). */
-export function hasNotStarted(date: string, time: string, now: LocalNow): boolean {
-  if (date !== now.date) return date > now.date;
-  return now.minutes < toMinutes(time);
+/** Un jugador puede cancelar su cupo hasta esta cantidad de minutos antes del inicio. */
+export const CANCEL_DEADLINE_MINUTES = 60;
+
+/** Minutos que faltan para el inicio del turno (negativo si ya comenzó). */
+export function minutesUntil(date: string, time: string, now: LocalNow): number {
+  const days = Math.round((toUtcDate(date).getTime() - toUtcDate(now.date).getTime()) / 86_400_000);
+  return days * 24 * 60 + toMinutes(time) - now.minutes;
+}
+
+/** true si todavía se puede cancelar un cupo: falta al menos 1 hora para el inicio. */
+export function canStillCancel(date: string, time: string, now: LocalNow): boolean {
+  return minutesUntil(date, time, now) >= CANCEL_DEADLINE_MINUTES;
 }

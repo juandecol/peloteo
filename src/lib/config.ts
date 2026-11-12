@@ -5,7 +5,7 @@
 // cancelados se conservan y siguen apuntando a ellos. Si hay encuentros futuros
 // afectados, se pide confirmación; al confirmar pasan a 'cancelado' y se avisa.
 
-import { courtHasSlot, parseIntList, type Court } from "./availability.ts";
+import { blockCoversSlot, courtHasSlot, parseIntList, type Court } from "./availability.ts";
 import { newId, placeholders, type Db, type DbStatement } from "./db.ts";
 import type { PendingNotice } from "./notify.ts";
 import { isDate, isTime, toMinutes, type LocalNow } from "./time.ts";
@@ -439,6 +439,89 @@ export async function deleteCourt(db: Db, id: string, confirm: boolean, now: Loc
   return deleteWith(db, affected, confirm, [
     db.prepare(`UPDATE courts SET deleted_at = ${NOW_SQL} WHERE id = ?`).bind(id),
   ]);
+}
+
+// ---------------------------------------------------------------
+// Bloqueos de canchas
+// ---------------------------------------------------------------
+
+export interface CourtBlock {
+  id: string;
+  court_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  reason: string;
+}
+
+/** Bloqueos de una cancha desde hoy, en orden. */
+export async function listBlocks(db: Db, courtId: string, now: LocalNow): Promise<CourtBlock[]> {
+  await getCourt(db, courtId);
+  const { results } = await db
+    .prepare(
+      `SELECT id, court_id, date, start_time, end_time, reason FROM court_blocks
+       WHERE court_id = ? AND date >= ? ORDER BY date, start_time, id`,
+    )
+    .bind(courtId, now.date)
+    .all<CourtBlock>();
+  return results;
+}
+
+function validateBlock(input: Record<string, unknown>, now: LocalNow) {
+  const { date, start_time, end_time } = input;
+  if (!isDate(date)) throw invalid("Elige la fecha del bloqueo.", "date");
+  if (date < now.date) throw invalid("La fecha ya pasó.", "date");
+  if (!isTime(start_time) || !isTime(end_time) || toMinutes(end_time) <= toMinutes(start_time)) {
+    throw invalid("La hora final debe ser posterior a la inicial.", "end_time");
+  }
+  const reason = optionalText(input.reason, 200, "reason");
+  return { date, start_time, end_time, reason };
+}
+
+export type CreateBlockResult =
+  | { created: false; needs_confirmation: true; games: GameRef[] }
+  | { created: true; block: CourtBlock; cancelled_games: number; notices: PendingNotice[] };
+
+/**
+ * Bloquea una cancha en una fecha y rango de horas. Si ya hay encuentros
+ * confirmados en esa cancha cuyo turno se cruza con el bloqueo, pide
+ * confirmación; al confirmar, esos encuentros se cancelan y se avisa.
+ */
+export async function createBlock(
+  db: Db,
+  courtId: string,
+  input: Record<string, unknown>,
+  confirm: boolean,
+  now: LocalNow,
+): Promise<CreateBlockResult> {
+  const court = await getCourt(db, courtId);
+  const b = validateBlock(input, now);
+  const sameDay = await futureGames(db, "g.court_id = ? AND g.status = 'confirmado' AND g.date = ?", [courtId, b.date], now);
+  const affected = sameDay.filter((g) =>
+    blockCoversSlot({ court_id: courtId, ...b }, g.date, g.time, court.slot_minutes),
+  );
+  if (affected.length > 0 && !confirm) return { created: false, needs_confirmation: true, games: affected };
+
+  const ids = affected.map((g) => g.id);
+  const notices = await cancelNotices(db, ids);
+  const id = newId("B");
+  await db.batch([
+    ...cancelGamesStmt(db, ids),
+    db
+      .prepare("INSERT INTO court_blocks (id, court_id, date, start_time, end_time, reason) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(id, courtId, b.date, b.start_time, b.end_time, b.reason),
+  ]);
+  return {
+    created: true,
+    block: { id, court_id: courtId, ...b },
+    cancelled_games: ids.length,
+    notices,
+  };
+}
+
+export async function deleteBlock(db: Db, id: string): Promise<void> {
+  const r = await db.prepare("DELETE FROM court_blocks WHERE id = ?").bind(id).run();
+  if (r.meta.changes === 0) throw new ConfigError("no_existe", "Ese bloqueo ya no existe.");
 }
 
 // ---------------------------------------------------------------

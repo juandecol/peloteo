@@ -4,7 +4,8 @@ import {
   addDays,
   datesOfMonth,
   dayOfWeek,
-  hasNotStarted,
+  canStillCancel,
+  minutesUntil,
   isDate,
   isDateBookable,
   isSlotOpen,
@@ -74,9 +75,20 @@ test("pasado: un turno se acepta hasta 15 minutos después de su inicio", () => 
   assert.ok(!isSlotOpen("2026-12-02", "10:00", now));
 });
 
-test("hasNotStarted distingue antes y después del inicio", () => {
-  assert.ok(hasNotStarted("2026-11-16", "10:01", now));
-  assert.ok(!hasNotStarted("2026-11-16", "10:00", now));
-  assert.ok(hasNotStarted("2026-11-17", "08:00", now));
-  assert.ok(!hasNotStarted("2026-11-15", "20:00", now));
+test("minutesUntil cuenta minutos hasta el inicio, también entre días", () => {
+  assert.equal(minutesUntil("2026-11-16", "11:30", now), 90);
+  assert.equal(minutesUntil("2026-11-16", "09:00", now), -60);
+  assert.equal(minutesUntil("2026-11-17", "08:00", now), 22 * 60);
+  const late = { date: "2026-11-16", minutes: 23 * 60 + 45 };
+  assert.equal(minutesUntil("2026-11-17", "00:30", late), 45);
+  assert.equal(minutesUntil("2026-12-01", "10:00", { date: "2026-11-30", minutes: 10 * 60 }), 24 * 60);
+});
+
+test("cancelar: se puede hasta 1 hora antes del inicio", () => {
+  assert.ok(canStillCancel("2026-11-16", "11:00", now)); // falta 1 hora justa
+  assert.ok(!canStillCancel("2026-11-16", "10:59", now)); // faltan 59 minutos
+  assert.ok(!canStillCancel("2026-11-16", "09:00", now)); // ya comenzó
+  assert.ok(canStillCancel("2026-11-17", "08:00", now));
+  // Cruza la medianoche: a las 23:45, un partido a las 00:30 ya no se puede cancelar.
+  assert.ok(!canStillCancel("2026-11-17", "00:30", { date: "2026-11-16", minutes: 23 * 60 + 45 }));
 });
