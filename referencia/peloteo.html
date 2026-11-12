@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Peloteo, agenda de partidos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF2EC; --surface:#FFFFFF; --ink:#14251D; --muted:#5A6B61; --line:#C9D5CB;
+  --court:#1E6B4F; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#1B2905; --clay:#A8492A;
+  --soft:#DDE9E0;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0E1814; --surface:#16241E; --ink:#E8F0EA; --muted:#94A79C; --line:#2A3D33;
+    --court:#2C8A66; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#1B2905; --clay:#E48E6C;
+    --soft:#1D3027;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0E1814; --surface:#16241E; --ink:#E8F0EA; --muted:#94A79C; --line:#2A3D33;
+  --court:#2C8A66; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#1B2905; --clay:#E48E6C;
+  --soft:#1D3027;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+  font-family:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:1rem;line-height:1.45;-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--court)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:3px solid var(--ball);outline-offset:2px}
+a{color:var(--court)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) a{color:#7FD3B0}}
+:root[data-theme="dark"] a{color:#7FD3B0}
+
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--court);color:var(--court-ink);
+  display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.6rem 1rem}
+.bar button{background:none;border:0;color:inherit;padding:.4rem .5rem;border-radius:8px;font-size:.9rem}
+.brand{font-stretch:125%;font-weight:800;font-size:1.15rem !important;letter-spacing:-.01em;padding-left:0 !important}
+.bar nav{display:flex;gap:.1rem}
+.bar nav button[aria-current="true"]{background:rgba(255,255,255,.18)}
+.bar nav b{background:var(--ball);color:var(--ball-ink);border-radius:99px;padding:0 .4rem;font-size:.75rem;margin-left:.2rem}
+
+main{max-width:36rem;margin:0 auto;padding:1rem 1rem 2rem}
+.hero{position:relative;background:var(--court);color:var(--court-ink);border-radius:14px;padding:2rem 1.4rem 1.6rem;overflow:hidden;margin-bottom:1.5rem}
+.hero::before{content:"";position:absolute;inset:.6rem;border:2px solid rgba(255,255,255,.3);border-radius:3px;pointer-events:none}
+.hero::after{content:"";position:absolute;top:.6rem;bottom:.6rem;right:28%;border-left:2px solid rgba(255,255,255,.3);pointer-events:none}
+.hero h1{position:relative;z-index:1;margin:0 0 .5rem;font-stretch:125%;font-weight:800;font-size:clamp(2.6rem,13vw,4rem);line-height:.95;letter-spacing:-.03em}
+.hero p{position:relative;z-index:1;margin:0;max-width:22rem;font-size:1rem}
+
+h1.h{font-stretch:125%;font-weight:800;font-size:1.6rem;letter-spacing:-.02em;margin:.3rem 0 .8rem;line-height:1.1}
+h2{font-size:1.05rem;font-weight:700;margin:1.4rem 0 .6rem}
+h3{font-size:.95rem;font-weight:700;margin:1.2rem 0 .5rem}
+p{margin:.4rem 0}
+.muted{color:var(--muted)} .small{font-size:.875rem}
+.id{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+
+.crumbs{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:0 0 .8rem;font-size:.9rem}
+.crumbs button{background:var(--soft);border:0;border-radius:99px;padding:.3rem .7rem}
+.crumbs span{color:var(--muted)}
+
+.list{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.row{display:flex;justify-content:space-between;align-items:center;gap:.8rem;width:100%;text-align:left;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem}
+.row .name{display:block;font-weight:700;font-size:1.05rem}
+.row .meta{display:block;color:var(--muted);font-size:.875rem}
+.row .go{font-weight:700;color:var(--court);white-space:nowrap}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .row .go{color:#7FD3B0}}
+:root[data-theme="dark"] .row .go{color:#7FD3B0}
+.tile .name{font-stretch:125%;font-weight:800;font-size:1.5rem;letter-spacing:-.02em}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1rem;margin:.6rem 0}
+.card h2,.card h3{margin-top:0}
+
+.btn{display:inline-flex;justify-content:center;align-items:center;border:0;border-radius:99px;padding:.75rem 1.3rem;
+  background:var(--ball);color:var(--ball-ink);font-weight:700;text-decoration:none}
+.btn.block{display:flex;width:100%}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.danger{background:transparent;color:var(--clay);border:1.5px solid var(--clay)}
+.btn.sm{padding:.45rem .9rem;font-size:.875rem}
+.actions{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1rem}
+
+/* calendario */
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin:.2rem 0 .6rem}
+.cal-head strong{font-stretch:125%;font-weight:800;font-size:1.25rem;text-transform:capitalize}
+.cal-head button{background:var(--surface);border:1px solid var(--line);border-radius:10px;width:2.6rem;height:2.6rem;font-size:1.1rem}
+.cal-head button:disabled{opacity:.35}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:.25rem}
+.cal .dow{text-align:center;font-size:.75rem;color:var(--muted);padding:.2rem 0}
+.cal button{position:relative;aspect-ratio:1;border:1px solid var(--line);background:var(--surface);border-radius:10px;
+  font-weight:700;font-variant-numeric:tabular-nums;padding:0}
+.cal button:disabled{background:transparent;border-color:transparent;color:var(--muted);opacity:.45;font-weight:400}
+.cal button.today{border-color:var(--court);border-width:2px}
+.cal button.sel{background:var(--court);color:var(--court-ink);border-color:var(--court)}
+.cal button.has::after{content:"";position:absolute;left:50%;bottom:14%;width:.42rem;height:.42rem;margin-left:-.21rem;border-radius:50%;background:var(--ball);box-shadow:0 0 0 1px var(--ball-ink)}
+.legend{display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--muted);margin:.5rem 0 0}
+.legend i{width:.5rem;height:.5rem;border-radius:50%;background:var(--ball);box-shadow:0 0 0 1px var(--ball-ink);display:inline-block}
+
+.slots{list-style:none;margin:0;padding:0}
+.slot{display:grid;grid-template-columns:3.6rem 1fr;gap:.6rem;padding:.5rem 0;border-top:1px solid var(--line);align-items:start}
+.slot time{font-stretch:112%;font-weight:800;font-size:1.05rem;font-variant-numeric:tabular-nums;padding-top:.55rem}
+.opts{display:grid;gap:.4rem}
+.opt{display:flex;justify-content:space-between;align-items:center;gap:.6rem;width:100%;text-align:left;
+  border-radius:10px;padding:.6rem .8rem;border:1px solid var(--line);background:var(--surface);font-size:.92rem}
+.opt b{white-space:nowrap;font-size:.85rem}
+.opt.join{background:var(--ball);color:var(--ball-ink);border-color:transparent}
+.opt.full{background:transparent;color:var(--muted);border-style:dashed}
+.opt.mine{background:var(--soft);border-color:transparent}
+
+/* formularios */
+label.f{display:block;margin:.9rem 0 0;font-weight:700;font-size:.9rem}
+label.f small{font-weight:400;color:var(--muted)}
+input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],input[type=time],input[type=url],select{
+  display:block;width:100%;max-width:100%;margin-top:.3rem;padding:.7rem .8rem;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);min-height:2.9rem}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+.levels{display:grid;gap:.4rem;margin-top:.4rem}
+.lvl{display:grid;grid-template-columns:2.6rem 1fr;align-items:center;gap:.6rem;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:.55rem .8rem;position:relative}
+.lvl input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.lvl .n{font-stretch:125%;font-weight:800;font-size:1.7rem;line-height:1;text-align:center}
+.lvl:has(input:checked){background:var(--court);color:var(--court-ink);border-color:var(--court)}
+.lvl:has(input:focus-visible){outline:3px solid var(--ball);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:99px;padding:.45rem .9rem;font-weight:700}
+.chip[aria-pressed="true"]{background:var(--court);color:var(--court-ink);border-color:var(--court)}
+.days{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.4rem}
+.days label{position:relative;border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:.5rem .7rem;font-weight:700;font-size:.9rem}
+.days input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0}
+.days label:has(input:checked){background:var(--court);color:var(--court-ink);border-color:var(--court)}
+.err{color:var(--clay);font-weight:700;margin-top:.8rem}
+
+.bubble{background:#DCF3C9;color:#0F2414;border-radius:4px 14px 14px 14px;padding:.7rem .9rem;font-size:.92rem;max-width:22rem;margin:.5rem 0}
+.tag{display:inline-block;border-radius:99px;padding:.15rem .6rem;font-size:.78rem;font-weight:700;background:var(--soft)}
+.tag.ok{background:var(--ball);color:var(--ball-ink)}
+.tag.off{background:transparent;border:1px solid var(--clay);color:var(--clay)}
+.tabs{display:flex;gap:.35rem;overflow-x:auto;margin:0 0 1rem;padding-bottom:.2rem}
+.tabs button{white-space:nowrap;border:1.5px solid var(--line);background:var(--surface);border-radius:99px;padding:.45rem .9rem;font-weight:700;font-size:.9rem}
+.tabs button[aria-current="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:.25rem .9rem;margin:.5rem 0}
+dl.kv dt{color:var(--muted);font-size:.875rem} dl.kv dd{margin:0;font-weight:600}
+footer{max-width:36rem;margin:0 auto;padding:0 1rem 2rem;color:var(--muted);font-size:.8rem}
+footer button{background:none;border:0;padding:0;text-decoration:underline;color:inherit;font-size:inherit}
+#toast{position:fixed;left:50%;bottom:calc(1.2rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);padding:.7rem 1.1rem;border-radius:99px;font-size:.9rem;max-width:90vw;z-index:20;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+@media (prefers-reduced-motion: reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<header class="bar" id="bar"></header>
+<main id="app"></main>
+<footer id="foot"></footer>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+/* ---------- utilidades ---------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const DOW=['lu','ma','mi','ju','vi','sá','do'];
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parse=s=>{const a=s.split('-').map(Number);return new Date(a[0],a[1]-1,a[2],12);};
+const today=()=>ymd(new Date());
+const addDays=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return ymd(d);};
+const nowHM=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes());};
+const fecha=s=>{const d=parse(s);return DIAS[d.getDay()]+' '+d.getDate()+' de '+MESES[d.getMonth()];};
+const ABC='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newId=p=>p+'-'+Array.from({length:5},()=>ABC[Math.floor(Math.random()*ABC.length)]).join('');
+const norm=s=>String(s).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+const LS={
+  get(k,f){try{const v=localStorage.getItem(k);return v==null?f:JSON.parse(v);}catch(e){return f;}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+};
+let toastT;
+function toast(m){const t=$('#toast');if(!t)return;t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),3200);}
+
+/* ---------- datos de ejemplo ---------- */
+/*SEED-START*/
+function demoData(base){
+  const t=base||today();
+  const allDays=[0,1,2,3,4,5,6];
+  const tenis=['Estoy entrenando para Wimbledon','Compito en torneos del club','Juego sets y a veces gano','Peloteo sin drama','Apenas logro pasar la pelota'];
+  const padel=['Me falta poco para el circuito pro','Juego ligas y torneos','Armo puntos y uso las paredes','Las paredes me usan a mí','Todavía le pego con el marco'];
+  const court=(id,venueId,sportId,name,surface,status,slot,notes)=>({id,venueId,sportId,name,surface,status,notes:notes||'',
+    mapsUrl:'',days:allDays,open:'08:00',close:'21:00',slot,from:'',to:''});
+  return {
+    venues:[
+      {id:'L-SM001',name:'Country Club Santa Martina',address:'Lo Barnechea, Santiago',mapsUrl:'https://www.google.com/maps/search/?api=1&query=Country+Club+Santa+Martina'},
+      {id:'L-AR002',name:'Club Los Aromos (ejemplo)',address:'La Reina, Santiago',mapsUrl:''}
+    ],
+    sports:[
+      {id:'D-TEN01',venueId:'L-SM001',name:'Tenis',players:2,cats:tenis},
+      {id:'D-PAD01',venueId:'L-SM001',name:'Pádel',players:4,cats:padel},
+      {id:'D-TEN02',venueId:'L-AR002',name:'Tenis',players:2,cats:tenis}
+    ],
+    courts:[
+      court('C-T1SM1','L-SM001','D-TEN01','Cancha 1','Arcilla','operativa',60,'Con iluminación'),
+      court('C-T2SM2','L-SM001','D-TEN01','Cancha 2','Arcilla','operativa',60,''),
+      court('C-T3SM3','L-SM001','D-TEN01','Cancha 3','Carpeta sintética','mantencion',60,'Techada'),
+      court('C-PASM4','L-SM001','D-PAD01','Cancha A','Césped sintético','operativa',90,'Paredes de cristal'),
+      court('C-PBSM5','L-SM001','D-PAD01','Cancha B','Césped sintético','operativa',90,''),
+      court('C-T1AR6','L-AR002','D-TEN02','Cancha 1','Cemento','operativa',60,'')
+    ],
+    games:[
+      {id:'E-DEMO1',venueId:'L-SM001',sportId:'D-TEN01',courtId:'C-T1SM1',date:addDays(t,1),time:'18:00',capacity:2,createdAt:0,
+        players:[{vid:'V-DEMO1',ini:'MT',lvl:3,email:'mt@example.com',wa:''}]},
+      {id:'E-DEMO2',venueId:'L-SM001',sportId:'D-TEN01',courtId:'C-T2SM2',date:addDays(t,2),time:'10:00',capacity:2,createdAt:0,
+        players:[{vid:'V-DEMO2',ini:'RS',lvl:4,email:'rs@example.com',wa:''}]},
+      {id:'E-DEMO3',venueId:'L-SM001',sportId:'D-PAD01',courtId:'C-PASM4',date:addDays(t,2),time:'18:30',capacity:4,createdAt:0,
+        players:[{vid:'V-DEMO3',ini:'CP',lvl:3,email:'cp@example.com',wa:''},{vid:'V-DEMO4',ini:'AL',lvl:3,email:'al@example.com',wa:''},{vid:'V-DEMO5',ini:'JV',lvl:2,email:'jv@example.com',wa:''}]}
+    ]
+  };
+}
+/*SEED-END*/
+
+/* ---------- almacenamiento: base compartida o este dispositivo ---------- */
+const data={venues:[],sports:[],courts:[],games:[]};
+const COLS=Object.keys(data);
+const Store={
+  mode:'local',db:null,ready:false,
+  startLocal(){
+    const saved=LS.get('peloteo_data',null);
+    if(saved&&saved.venues){COLS.forEach(c=>{data[c]=saved[c]||[];});}
+    else{Object.assign(data,demoData());this.saveLocal();}
+    this.mode='local';this.ready=true;
+  },
+  saveLocal(){LS.set('peloteo_data',data);},
+  startDb(db){
+    this.db=db;this.mode='db';this.ready=false;COLS.forEach(c=>{data[c]=[];});
+    const got=new Set();
+    const timer=setTimeout(()=>{if(!this.ready){S.note='Los datos compartidos aún no responden. Seguimos intentando.';render();}},10000);
+    const done=c=>{got.add(c);if(got.size===COLS.length){this.ready=true;clearTimeout(timer);}};
+    COLS.forEach(c=>{
+      db.collection(c).onSnapshot(snap=>{
+        data[c]=snap.docs.map(d=>JSON.parse(JSON.stringify(d.data())));
+        done(c);if(this.ready)S.note='';render();
+      },()=>{done(c);S.note='No se pudieron cargar los datos compartidos.';render();});
+    });
+  },
+  fail(e){toast(e&&e.code==='invalid_argument'?'Esta vista es de solo lectura: el cambio no se guardó.':'No se pudo guardar. Intenta de nuevo.');},
+  put(col,obj){
+    const i=data[col].findIndex(x=>x.id===obj.id);
+    if(i>=0)data[col][i]=obj;else data[col].push(obj);
+    if(this.mode==='db')this.db.collection(col).doc(obj.id).set(JSON.parse(JSON.stringify(obj))).catch(e=>this.fail(e));
+    else this.saveLocal();
+  },
+  del(col,id){
+    data[col]=data[col].filter(x=>x.id!==id);
+    if(this.mode==='db')this.db.collection(col).doc(id).delete().catch(e=>this.fail(e));
+    else this.saveLocal();
+  }
+};
+
+/* ---------- identidad del visitante (cookie en producción) ---------- */
+let vid=LS.get('peloteo_vid',null);
+if(!vid){vid=newId('V');LS.set('peloteo_vid',vid);}
+let prefs=LS.get('peloteo_prefs',{});
+
+/* ---------- estado de pantalla ---------- */
+const S={view:'home',sportKey:null,sportId:null,venueId:null,ym:null,date:null,time:null,gameId:null,doneId:null,
+  search:null,searched:false,confirm:null,err:'',loading:false,note:'',
+  adm:{in:false,view:'venues',venueId:null,sportId:null,courtId:null}};
+
+/* ---------- consultas ---------- */
+const byId=(col,id)=>data[col].find(x=>x.id===id);
+const levelsOf=sp=>(sp.cats||[]).map((l,i)=>({n:i+1,label:l})).filter(c=>c.label&&c.label.trim());
+function sportNames(){
+  const m={};
+  data.sports.forEach(s=>{if(!byId('venues',s.venueId))return;const k=norm(s.name);
+    (m[k]=m[k]||{key:k,name:s.name,venues:0,courts:0});m[k].venues++;
+    m[k].courts+=data.courts.filter(c=>c.sportId===s.id).length;});
+  return Object.values(m).sort((a,b)=>a.name.localeCompare(b.name,'es'));
+}
+function venuesFor(key){
+  return data.sports.filter(s=>norm(s.name)===key).map(s=>({sport:s,venue:byId('venues',s.venueId)})).filter(x=>x.venue);
+}
+function courtSlots(c,date){
+  if(c.status!=='operativa')return [];
+  if(c.from&&date<c.from)return [];
+  if(c.to&&date>c.to)return [];
+  if(!(c.days||[]).includes(parse(date).getDay()))return [];
+  const m=t=>{const a=t.split(':').map(Number);return a[0]*60+a[1];};
+  const out=[];const step=Number(c.slot)||60;
+  for(let t=m(c.open);t+step<=m(c.close);t+=step)out.push(pad(Math.floor(t/60))+':'+pad(t%60));
+  return out;
+}
+const isOpen=g=>g.players.length<g.capacity;
+const future=(date,time)=>date>today()||(date===today()&&time>nowHM());
+function dayInfo(sport,date){
+  if(date<today())return [];
+  const map={};
+  data.courts.filter(c=>c.sportId===sport.id).forEach(c=>courtSlots(c,date).forEach(t=>{
+    const s=(map[t]=map[t]||{time:t,free:[],open:[],full:0});
+    const g=data.games.find(x=>x.courtId===c.id&&x.date===date&&x.time===t);
+    if(!g)s.free.push(c);else if(isOpen(g))s.open.push(g);else s.full++;
+  }));
+  return Object.values(map).filter(s=>future(date,s.time)).sort((a,b)=>a.time<b.time?-1:1);
+}
+const myGames=()=>data.games.filter(g=>g.players.some(p=>p.vid===vid)).sort((a,b)=>(a.date+a.time)<(b.date+b.time)?-1:1);
+const who=g=>g.players.map(p=>esc(p.ini)+' (nivel '+p.lvl+')').join(', ');
+const faltan=g=>{const n=g.capacity-g.players.length;return n===1?'falta 1 jugador':'faltan '+n+' jugadores';};
+const surfaceTxt=c=>c.surface?c.surface.toLowerCase():'';
+function mapLink(url,txt){return url?'<a href="'+esc(url)+'" target="_blank" rel="noopener">'+(txt||'Ver en Google Maps')+'</a>':'';}
+
+/* ---------- vistas públicas ---------- */
+function crumbs(upTo){
+  const parts=[];
+  const sp=S.sportId&&byId('sports',S.sportId);const ve=S.venueId&&byId('venues',S.venueId);
+  if(S.sportKey)parts.push('<button data-a="go" data-v="home">'+esc(sp?sp.name:cap(S.sportKey))+'</button>');
+  if(upTo>=2&&ve)parts.push('<span>›</span><button data-a="go" data-v="venue">'+esc(ve.name)+'</button>');
+  if(upTo>=3&&S.date)parts.push('<span>›</span><button data-a="go" data-v="calendar">'+esc(fecha(S.date))+'</button>');
+  return parts.length?'<p class="crumbs">'+parts.join('')+'</p>':'';
+}
+function vHome(){
+  const names=sportNames();
+  let h='<section class="hero"><h1>¿Jugamos?</h1><p>Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.</p></section>';
+  if(!names.length){
+    return h+'<div class="card"><h2>Todavía no hay deportes configurados</h2><p class="muted">Entra a Configuración, crea un lugar, agrégale deportes y canchas, y aquí aparecerán.</p><div class="actions"><button class="btn" data-a="go" data-v="admin">Ir a Configuración</button></div></div>';
+  }
+  h+='<h2>Elige tu deporte</h2><ul class="list">'+names.map(n=>
+    '<li><button class="row tile" data-a="sport" data-k="'+esc(n.key)+'"><span><span class="name">'+esc(n.name)+'</span><span class="meta">'+
+    (n.venues===1?'1 lugar':n.venues+' lugares')+', '+(n.courts===1?'1 cancha':n.courts+' canchas')+'</span></span><span class="go">Elegir</span></button></li>').join('')+'</ul>';
+  const waiting=data.games.filter(g=>isOpen(g)&&future(g.date,g.time)&&!g.players.some(p=>p.vid===vid)).length;
+  h+='<h2>¿Prefieres sumarte a un partido?</h2><button class="row" data-a="go" data-v="search"><span><span class="name">Buscar jugadores</span><span class="meta">'+
+    (waiting?(waiting===1?'Hay 1 partido esperando jugadores':'Hay '+waiting+' partidos esperando jugadores'):'Filtra por lugar, fechas, horas y nivel')+'</span></span><span class="go">Buscar</span></button>';
+  return h;
+}
+function vVenue(){
+  const list=venuesFor(S.sportKey);
+  if(!list.length)return '<p>Ese deporte ya no está disponible.</p><button class="btn" data-a="go" data-v="home">Volver al inicio</button>';
+  return crumbs(1)+'<h1 class="h">¿Dónde quieres jugar?</h1><ul class="list">'+list.map(x=>{
+    const nc=data.courts.filter(c=>c.sportId===x.sport.id&&c.status==='operativa').length;
+    const no=data.games.filter(g=>g.sportId===x.sport.id&&isOpen(g)&&future(g.date,g.time)).length;
+    return '<li><button class="row" data-a="venue" data-id="'+x.venue.id+'" data-sport="'+x.sport.id+'"><span><span class="name">'+esc(x.venue.name)+'</span><span class="meta">'+
+      esc(x.venue.address||'')+(x.venue.address?'. ':'')+(nc===1?'1 cancha operativa':nc+' canchas operativas')+(no?'. '+(no===1?'1 partido busca jugadores':no+' partidos buscan jugadores'):'')+
+      '</span></span><span class="go">Elegir</span></button></li>';}).join('')+'</ul>';
+}
+function vCalendar(){
+  const sport=byId('sports',S.sportId),venue=byId('venues',S.venueId);
+  if(!sport||!venue)return '<p>Ese lugar ya no está disponible.</p><button class="btn" data-a="go" data-v="home">Volver al inicio</button>';
+  const y=S.ym.y,m=S.ym.m,now=new Date();
+  const isCur=y===now.getFullYear()&&m===now.getMonth();
+  const first=new Date(y,m,1),off=(first.getDay()+6)%7,n=new Date(y,m+1,0).getDate(),t=today();
+  let cells=DOW.map(d=>'<span class="dow">'+d+'</span>').join('');
+  for(let i=0;i<off;i++)cells+='<span></span>';
+  for(let d=1;d<=n;d++){
+    const ds=y+'-'+pad(m+1)+'-'+pad(d);const info=dayInfo(sport,ds);
+    const usable=info.some(s=>s.free.length||s.open.length);
+    const has=info.some(s=>s.open.length);
+    cells+='<button data-a="day" data-d="'+ds+'" class="'+(ds===t?'today ':'')+(ds===S.date?'sel ':'')+(has?'has':'')+'"'+(usable?'':' disabled')+
+      ' aria-label="'+fecha(ds)+(has?', hay partidos buscando jugadores':'')+'"'+(ds===S.date?' aria-pressed="true"':'')+'>'+d+'</button>';
+  }
+  let h=crumbs(2)+'<h1 class="h">Elige día y hora</h1>'+
+    '<div class="cal-head"><button data-a="month" data-n="-1" aria-label="Mes anterior"'+(isCur?' disabled':'')+'>‹</button><strong>'+MESES[m]+' '+y+'</strong><button data-a="month" data-n="1" aria-label="Mes siguiente">›</button></div>'+
+    '<div class="cal">'+cells+'</div><p class="legend"><i></i> Hay alguien buscando partido ese día</p>';
+  if(S.date){
+    const info=dayInfo(sport,S.date);
+    h+='<h2>'+cap(fecha(S.date))+'</h2>';
+    h+=info.length?'<ul class="slots">'+info.map(s=>{
+      const o=[];
+      s.open.forEach(g=>{
+        if(g.players.some(p=>p.vid===vid))o.push('<div class="opt mine"><span>Tu partido: '+faltan(g)+'</span></div>');
+        else o.push('<button class="opt join" data-a="pickGame" data-id="'+g.id+'"><span>'+who(g)+': '+faltan(g)+'</span><b>Unirme</b></button>');
+      });
+      if(s.free.length)o.push('<button class="opt" data-a="pickTime" data-t="'+s.time+'"><span>'+(s.free.length===1?'1 cancha libre':s.free.length+' canchas libres')+'</span><b>Abrir partido</b></button>');
+      if(!o.length)o.push('<div class="opt full">Completo</div>');
+      return '<li class="slot"><time>'+s.time+'</time><div class="opts">'+o.join('')+'</div></li>';
+    }).join('')+'</ul>':'<p class="muted">No quedan horas disponibles ese día.</p>';
+  }else h+='<p class="muted" style="margin-top:1rem">Toca un día para ver las horas disponibles.</p>';
+  return h;
+}
+function vForm(){
+  const g=S.gameId?byId('games',S.gameId):null;
+  const sport=byId('sports',g?g.sportId:S.sportId),venue=byId('venues',g?g.venueId:S.venueId);
+  if(!sport||!venue||(S.gameId&&!g))return '<p>Ese partido ya no está disponible.</p><button class="btn" data-a="go" data-v="home">Volver al inicio</button>';
+  const date=g?g.date:S.date,time=g?g.time:S.time;
+  const lv=levelsOf(sport);
+  let h='<p class="crumbs"><button data-a="back">‹ Volver</button></p><h1 class="h">'+(g?'Unirme al partido':'Abrir partido')+'</h1>'+
+    '<div class="card"><dl class="kv"><dt>Deporte</dt><dd>'+esc(sport.name)+'</dd><dt>Lugar</dt><dd>'+esc(venue.name)+'</dd><dt>Cuándo</dt><dd>'+cap(fecha(date))+', '+time+'</dd>'+
+    (g?'<dt>Ya están</dt><dd>'+who(g)+'</dd>':'')+'</dl></div>'+
+    '<label class="f" for="ini">Tus iniciales</label><input id="ini" name="ini" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="JR" value="'+esc(prefs.ini||'')+'">'+
+    '<label class="f" id="lvl-l">Tu nivel de juego</label><div class="levels" role="radiogroup" aria-labelledby="lvl-l">'+
+    lv.map(c=>'<label class="lvl"><input type="radio" name="lvl" value="'+c.n+'"'+(prefs['lvl_'+norm(sport.name)]===c.n?' checked':'')+'><span class="n">'+c.n+'</span><span>'+esc(c.label)+'</span></label>').join('')+'</div>'+
+    '<label class="f" for="email">Email de contacto</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="tu@correo.cl" value="'+esc(prefs.email||'')+'">'+
+    '<label class="f" for="wa">WhatsApp <small>(opcional, para avisarte más rápido)</small></label><input id="wa" name="wa" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="'+esc(prefs.wa||'')+'">'+
+    '<p class="small muted">Tu contacto solo se comparte con quienes jueguen contigo.</p>'+
+    (S.err?'<p class="err" role="alert">'+esc(S.err)+'</p>':'')+
+    '<div class="actions"><button class="btn block" data-a="submitPlay">'+(g?'Unirme al partido':'Publicar partido')+'</button></div>';
+  return h;
+}
+function waText(g){
+  const sport=byId('sports',g.sportId),venue=byId('venues',g.venueId),court=byId('courts',g.courtId);
+  const base=(sport?sport.name:'')+' en '+(venue?venue.name:'')+', '+fecha(g.date)+' a las '+g.time;
+  if(isOpen(g))return 'Peloteo: publicamos tu partido. '+base+'. Te avisamos apenas alguien se sume.';
+  const others=g.players.filter(p=>p.vid!==vid).map(p=>p.ini+' (nivel '+p.lvl+')').join(', ');
+  return 'Peloteo: ¡partido confirmado! '+base+', '+(court?court.name+(court.surface?' ('+surfaceTxt(court)+')':''):'')+'. Juegas con '+others+'. Responde CANCELAR si no puedes ir.';
+}
+function gameCard(g,full){
+  const sport=byId('sports',g.sportId),venue=byId('venues',g.venueId),court=byId('courts',g.courtId);
+  const done=!isOpen(g);
+  let h='<div class="card"><p><span class="tag '+(done?'ok':'')+'">'+(done?'Confirmado':cap(faltan(g)))+'</span></p>'+
+    '<h3>'+esc(sport?sport.name:'')+', '+fecha(g.date)+' a las '+g.time+'</h3>'+
+    '<dl class="kv"><dt>Lugar</dt><dd>'+esc(venue?venue.name:'')+'</dd>'+
+    '<dt>Cancha</dt><dd>'+esc(court?court.name:'')+(court&&court.surface?', '+esc(surfaceTxt(court)):'')+(court&&court.notes?'. '+esc(court.notes):'')+'</dd>'+
+    '<dt>Juegan</dt><dd>'+who(g)+'</dd></dl>';
+  const map=(court&&court.mapsUrl)||(venue&&venue.mapsUrl);
+  if(map)h+='<p>'+mapLink(map,'Cómo llegar (Google Maps)')+'</p>';
+  if(done&&g.players.some(p=>p.vid===vid)){
+    h+='<h3>Contacto de tus compañeros</h3>'+g.players.filter(p=>p.vid!==vid).map(p=>{
+      const wa=(p.wa||'').replace(/\D/g,'');
+      return '<p>'+esc(p.ini)+': <a href="mailto:'+esc(p.email)+'">'+esc(p.email)+'</a>'+(wa?' o <a href="https://wa.me/'+wa+'" target="_blank" rel="noopener">escribirle por WhatsApp</a>':'')+'</p>';}).join('');
+  }
+  if(full)h+='<div class="actions"><button class="btn danger sm" data-a="cancelMine" data-id="'+g.id+'">'+(S.confirm==='cm'+g.id?'Toca de nuevo para cancelar':'Cancelar mi cupo')+'</button></div>';
+  return h+'</div>';
+}
+function vDone(){
+  const g=byId('games',S.doneId);
+  if(!g)return '<p>Ese partido ya no existe.</p><button class="btn" data-a="go" data-v="home">Volver al inicio</button>';
+  const done=!isOpen(g);
+  return '<h1 class="h">'+(done?'¡Partido confirmado!':'Partido publicado')+'</h1>'+
+    '<p>'+(done?'Ya tienen cancha asignada. Estos son los datos.':'Reservamos una cancha para ti. Cuando alguien se sume, te avisamos.')+'</p>'+
+    gameCard(g,false)+
+    '<h2>Así llegaría el aviso por WhatsApp</h2><div class="bubble">'+esc(waText(g))+'</div>'+
+    '<p class="small muted">En este prototipo el mensaje no se envía; es una vista previa.</p>'+
+    '<div class="actions"><button class="btn" data-a="go" data-v="mine">Ver mis partidos</button><button class="btn ghost" data-a="go" data-v="home">Agendar otro</button></div>';
+}
+function initSearch(){
+  const names=sportNames();const key=S.sportKey&&names.some(n=>n.key===S.sportKey)?S.sportKey:(names[0]?names[0].key:'');
+  const vs=venuesFor(key);
+  S.search={sportKey:key,venueId:S.venueId&&vs.some(x=>x.venue.id===S.venueId)?S.venueId:(vs[0]?vs[0].venue.id:''),
+    from:today(),to:addDays(today(),14),t1:'07:00',t2:'23:00',levels:[1,2,3,4,5]};
+}
+function searchResults(){
+  const q=S.search;
+  return data.games.filter(g=>{
+    const sp=byId('sports',g.sportId);
+    return sp&&norm(sp.name)===q.sportKey&&g.venueId===q.venueId&&g.date>=q.from&&g.date<=q.to&&g.time>=q.t1&&g.time<=q.t2&&
+      isOpen(g)&&future(g.date,g.time)&&!g.players.some(p=>p.vid===vid)&&g.players.some(p=>q.levels.includes(p.lvl));
+  }).sort((a,b)=>(a.date+a.time)<(b.date+b.time)?-1:1);
+}
+function vSearch(){
+  if(!S.search)initSearch();
+  const q=S.search,names=sportNames(),vs=venuesFor(q.sportKey);
+  if(!names.length)return '<h1 class="h">Buscar jugadores</h1><p class="muted">Todavía no hay deportes configurados.</p>';
+  let h='<h1 class="h">Buscar jugadores</h1><p class="muted">Encuentra partidos abiertos que esperan a alguien de tu nivel.</p>'+
+    '<div class="two"><div><label class="f" for="s-sp">Deporte</label><select id="s-sp" data-s="sportKey">'+names.map(n=>'<option value="'+esc(n.key)+'"'+(n.key===q.sportKey?' selected':'')+'>'+esc(n.name)+'</option>').join('')+'</select></div>'+
+    '<div><label class="f" for="s-ve">Lugar</label><select id="s-ve" data-s="venueId">'+vs.map(x=>'<option value="'+x.venue.id+'"'+(x.venue.id===q.venueId?' selected':'')+'>'+esc(x.venue.name)+'</option>').join('')+'</select></div></div>'+
+    '<div class="two"><div><label class="f" for="s-f">Desde el día</label><input id="s-f" type="date" data-s="from" value="'+q.from+'" min="'+today()+'"></div>'+
+    '<div><label class="f" for="s-t">Hasta el día</label><input id="s-t" type="date" data-s="to" value="'+q.to+'" min="'+today()+'"></div></div>'+
+    '<div class="two"><div><label class="f" for="s-h1">Desde las</label><input id="s-h1" type="time" data-s="t1" value="'+q.t1+'"></div>'+
+    '<div><label class="f" for="s-h2">Hasta las</label><input id="s-h2" type="time" data-s="t2" value="'+q.t2+'"></div></div>'+
+    '<label class="f">Niveles con los que jugarías <small>(1 avanzado, 5 principiante)</small></label><div class="chips">'+
+    [1,2,3,4,5].map(n=>'<button class="chip" data-a="lvlToggle" data-n="'+n+'" aria-pressed="'+q.levels.includes(n)+'">'+n+'</button>').join('')+'</div>'+
+    '<div class="actions"><button class="btn block" data-a="searchRun">Buscar partidos</button></div>';
+  if(S.searched){
+    const r=searchResults();
+    h+='<h2>'+(r.length?(r.length===1?'1 partido encontrado':r.length+' partidos encontrados'):'Nadie busca partido en ese rango')+'</h2>';
+    if(!r.length)h+='<p class="muted">Abre tú un partido y quien busque después te encontrará.</p><div class="actions"><button class="btn ghost" data-a="openFromSearch">Abrir un partido</button></div>';
+    else h+='<ul class="list">'+r.map(g=>{const c=byId('courts',g.courtId);
+      return '<li><button class="row" data-a="pickGame" data-id="'+g.id+'"><span><span class="name">'+cap(fecha(g.date))+', '+g.time+'</span><span class="meta">'+who(g)+'. '+cap(faltan(g))+'. '+esc(c?c.name:'')+'</span></span><span class="go">Unirme</span></button></li>';}).join('')+'</ul>';
+  }
+  return h;
+}
+function vMine(){
+  const mine=myGames();
+  let h='<h1 class="h">Mis partidos</h1>';
+  if(!mine.length)h+='<div class="card"><p>Aún no tienes partidos agendados.</p><div class="actions"><button class="btn" data-a="go" data-v="home">Agendar un partido</button></div></div>';
+  else h+=mine.map(g=>gameCard(g,true)).join('');
+  return h;
+}
+
+/* ---------- administración ---------- */
+const SURF=['Arcilla','Carpeta sintética','Césped sintético','Cemento','Césped natural','Otra'];
+const STAT={operativa:'Operativa',mantencion:'En mantención',cerrada:'Cerrada'};
+function vAdmin(){
+  const A=S.adm;
+  if(!A.in){
+    return '<h1 class="h">Configuración</h1><p class="muted">Acceso del administrador.</p>'+
+      '<label class="f" for="u">Usuario</label><input id="u" name="u" type="text" autocomplete="username" autocapitalize="none">'+
+      '<label class="f" for="p">Contraseña</label><input id="p" name="p" type="password" autocomplete="current-password">'+
+      (S.err?'<p class="err" role="alert">'+esc(S.err)+'</p>':'')+
+      '<div class="actions"><button class="btn block" data-a="admLogin">Entrar</button></div>'+
+      '<p class="small muted">Prototipo: usuario “admin”, contraseña “admin”.</p>';
+  }
+  const tab=(v,t)=>'<button data-a="admGo" data-v="'+v+'" aria-current="'+(A.view===v||(v==='venues'&&['venue','venueForm','sport','sportForm','courtForm'].includes(A.view)))+'">'+t+'</button>';
+  let h='<h1 class="h">Configuración</h1><div class="tabs">'+tab('venues','Lugares')+tab('games','Encuentros')+tab('security','Seguridad')+'<button data-a="admLogout">Salir</button></div>';
+  const ve=A.venueId&&byId('venues',A.venueId),sp=A.sportId&&byId('sports',A.sportId),co=A.courtId&&byId('courts',A.courtId);
+  const del=(type,id,txt)=>'<button class="btn danger sm" data-a="admDel" data-t="'+type+'" data-id="'+id+'">'+(S.confirm===type+id?'Toca de nuevo para eliminar':txt)+'</button>';
+  const err=S.err?'<p class="err" role="alert">'+esc(S.err)+'</p>':'';
+  switch(A.view){
+  case 'venues':
+    h+=data.venues.length?'<ul class="list">'+data.venues.map(v=>{
+      const ns=data.sports.filter(s=>s.venueId===v.id).length,nc=data.courts.filter(c=>c.venueId===v.id).length;
+      return '<li><button class="row" data-a="admGo" data-v="venue" data-venue="'+v.id+'"><span><span class="name">'+esc(v.name)+'</span><span class="meta">ID '+v.id+'. '+(ns===1?'1 deporte':ns+' deportes')+', '+(nc===1?'1 cancha':nc+' canchas')+'</span></span><span class="go">Abrir</span></button></li>';}).join('')+'</ul>'
+      :'<div class="card"><p>No hay lugares todavía. Crea el primero o carga datos de ejemplo para probar.</p><div class="actions"><button class="btn ghost sm" data-a="seed">Cargar datos de ejemplo</button></div></div>';
+    h+='<div class="actions"><button class="btn" data-a="admGo" data-v="venueForm" data-venue="">Agregar lugar</button></div>';
+    break;
+  case 'venueForm':
+    h+='<p class="crumbs"><button data-a="admGo" data-v="'+(ve?'venue':'venues')+'">‹ Volver</button></p><h2>'+(ve?'Editar lugar':'Nuevo lugar')+'</h2>'+
+      '<label class="f" for="vn">Nombre del lugar</label><input id="vn" name="vn" type="text" placeholder="Country Club Santa Martina" value="'+esc(ve?ve.name:'')+'">'+
+      '<label class="f" for="va">Dirección o comuna</label><input id="va" name="va" type="text" value="'+esc(ve?ve.address:'')+'">'+
+      '<label class="f" for="vm">Enlace de Google Maps <small>(opcional)</small></label><input id="vm" name="vm" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/..." value="'+esc(ve?ve.mapsUrl:'')+'">'+
+      err+'<div class="actions"><button class="btn" data-a="admSaveVenue">Guardar lugar</button>'+(ve?del('venue',ve.id,'Eliminar lugar'):'')+'</div>';
+    break;
+  case 'venue':
+    if(!ve){h+='<p>Ese lugar ya no existe.</p>';break;}
+    h+='<p class="crumbs"><button data-a="admGo" data-v="venues">Lugares</button><span>›</span>'+esc(ve.name)+'</p>'+
+      '<div class="card"><h2>'+esc(ve.name)+'</h2><p class="id">ID '+ve.id+'</p><p>'+esc(ve.address||'Sin dirección')+'</p>'+(ve.mapsUrl?'<p>'+mapLink(ve.mapsUrl)+'</p>':'')+
+      '<div class="actions"><button class="btn ghost sm" data-a="admGo" data-v="venueForm">Editar lugar</button></div></div>'+
+      '<h3>Deportes en este lugar</h3>';
+    {const ss=data.sports.filter(s=>s.venueId===ve.id);
+    h+=ss.length?'<ul class="list">'+ss.map(s=>{const nc=data.courts.filter(c=>c.sportId===s.id).length;
+      return '<li><button class="row" data-a="admGo" data-v="sport" data-sport="'+s.id+'"><span><span class="name">'+esc(s.name)+'</span><span class="meta">ID '+s.id+'. '+levelsOf(s).length+' categorías, '+(nc===1?'1 cancha':nc+' canchas')+'</span></span><span class="go">Abrir</span></button></li>';}).join('')+'</ul>'
+      :'<p class="muted">Aún no hay deportes en este lugar.</p>';}
+    h+='<div class="actions"><button class="btn" data-a="admGo" data-v="sportForm" data-sport="">Agregar deporte</button></div>';
+    break;
+  case 'sportForm':
+    h+='<p class="crumbs"><button data-a="admGo" data-v="'+(sp?'sport':'venue')+'">‹ Volver</button></p><h2>'+(sp?'Editar deporte':'Nuevo deporte en '+esc(ve?ve.name:''))+'</h2>'+
+      '<label class="f" for="sn">Nombre del deporte</label><input id="sn" name="sn" type="text" placeholder="Tenis" value="'+esc(sp?sp.name:'')+'">'+
+      '<label class="f" for="sj">Jugadores por partido</label><select id="sj" name="sj">'+[2,4].map(n=>'<option value="'+n+'"'+((sp?sp.players:2)===n?' selected':'')+'>'+n+(n===2?' (singles)':' (dobles)')+'</option>').join('')+'</select>'+
+      '<h3>Categorías <span class="muted small">(1 avanzado, 5 principiante; deja en blanco las que no uses)</span></h3>'+
+      [1,2,3,4,5].map(n=>'<label class="f" for="c'+n+'">Categoría '+n+'</label><input id="c'+n+'" name="c'+n+'" type="text" maxlength="60" placeholder="'+(n===1?'Estoy entrenando para Wimbledon':n===5?'Apenas logro pasar la pelota':'Texto para el nivel '+n)+'" value="'+esc(sp&&sp.cats?sp.cats[n-1]||'':'')+'">').join('')+
+      err+'<div class="actions"><button class="btn" data-a="admSaveSport">Guardar deporte</button>'+(sp?del('sport',sp.id,'Eliminar deporte'):'')+'</div>';
+    break;
+  case 'sport':
+    if(!sp||!ve){h+='<p>Ese deporte ya no existe.</p>';break;}
+    h+='<p class="crumbs"><button data-a="admGo" data-v="venues">Lugares</button><span>›</span><button data-a="admGo" data-v="venue">'+esc(ve.name)+'</button><span>›</span>'+esc(sp.name)+'</p>'+
+      '<div class="card"><h2>'+esc(sp.name)+'</h2><p class="id">ID '+sp.id+'</p><p>'+sp.players+' jugadores por partido</p>'+
+      '<dl class="kv">'+levelsOf(sp).map(c=>'<dt>Nivel '+c.n+'</dt><dd>'+esc(c.label)+'</dd>').join('')+'</dl>'+
+      '<div class="actions"><button class="btn ghost sm" data-a="admGo" data-v="sportForm">Editar deporte y categorías</button></div></div><h3>Canchas</h3>';
+    {const cs=data.courts.filter(c=>c.sportId===sp.id);
+    h+=cs.length?'<ul class="list">'+cs.map(c=>'<li><button class="row" data-a="admGo" data-v="courtForm" data-court="'+c.id+'"><span><span class="name">'+esc(c.name)+' <span class="tag '+(c.status==='operativa'?'ok':'off')+'">'+STAT[c.status]+'</span></span><span class="meta">ID '+c.id+'. '+esc(c.surface)+'. '+c.open+' a '+c.close+', turnos de '+c.slot+' min</span></span><span class="go">Editar</span></button></li>').join('')+'</ul>'
+      :'<p class="muted">Aún no hay canchas para este deporte.</p>';}
+    h+='<div class="actions"><button class="btn" data-a="admGo" data-v="courtForm" data-court="">Agregar cancha</button></div>';
+    break;
+  case 'courtForm':{
+    const c=co||{name:'',surface:'Arcilla',status:'operativa',mapsUrl:'',notes:'',days:[0,1,2,3,4,5,6],open:'08:00',close:'21:00',slot:60,from:'',to:''};
+    h+='<p class="crumbs"><button data-a="admGo" data-v="sport">‹ Volver</button></p><h2>'+(co?'Editar cancha':'Nueva cancha de '+esc(sp?sp.name:''))+'</h2>'+(co?'<p class="id">ID '+co.id+'</p>':'')+
+      '<label class="f" for="cn">Nombre</label><input id="cn" name="cn" type="text" placeholder="Cancha 1" value="'+esc(c.name)+'">'+
+      '<div class="two"><div><label class="f" for="cs">Materialidad</label><select id="cs" name="cs">'+SURF.map(s=>'<option'+(s===c.surface?' selected':'')+'>'+s+'</option>').join('')+(SURF.includes(c.surface)?'':'<option selected>'+esc(c.surface)+'</option>')+'</select></div>'+
+      '<div><label class="f" for="ce">Estado</label><select id="ce" name="ce">'+Object.keys(STAT).map(k=>'<option value="'+k+'"'+(k===c.status?' selected':'')+'>'+STAT[k]+'</option>').join('')+'</select></div></div>'+
+      '<label class="f" for="co">Otras características <small>(techada, iluminación…)</small></label><input id="co" name="co" type="text" value="'+esc(c.notes)+'">'+
+      '<label class="f" for="cm">Ubicación en Google Maps <small>(pega el enlace)</small></label><input id="cm" name="cm" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/..." value="'+esc(c.mapsUrl)+'">'+
+      '<label class="f">Días de operación</label><div class="days">'+[1,2,3,4,5,6,0].map(d=>'<label><input type="checkbox" name="day" value="'+d+'"'+(c.days.includes(d)?' checked':'')+'>'+DIAS[d].slice(0,2)+'</label>').join('')+'</div>'+
+      '<div class="two"><div><label class="f" for="ca">Abre</label><input id="ca" name="ca" type="time" value="'+c.open+'"></div><div><label class="f" for="cc">Cierra</label><input id="cc" name="cc" type="time" value="'+c.close+'"></div></div>'+
+      '<label class="f" for="ct">Duración de cada turno</label><select id="ct" name="ct">'+[60,90,120].map(n=>'<option value="'+n+'"'+(Number(c.slot)===n?' selected':'')+'>'+n+' minutos</option>').join('')+'</select>'+
+      '<div class="two"><div><label class="f" for="cf">Disponible desde <small>(opcional)</small></label><input id="cf" name="cf" type="date" value="'+c.from+'"></div><div><label class="f" for="ch">Hasta <small>(opcional)</small></label><input id="ch" name="ch" type="date" value="'+c.to+'"></div></div>'+
+      err+'<div class="actions"><button class="btn" data-a="admSaveCourt">Guardar cancha</button>'+(co?del('court',co.id,'Eliminar cancha'):'')+'</div>';
+    break;}
+  case 'games':{
+    const gs=data.games.filter(g=>g.date>=today()).sort((a,b)=>(a.date+a.time)<(b.date+b.time)?-1:1);
+    h+=gs.length?gs.map(g=>{const s=byId('sports',g.sportId),v=byId('venues',g.venueId),c=byId('courts',g.courtId);
+      return '<div class="card"><p><span class="tag '+(isOpen(g)?'':'ok')+'">'+(isOpen(g)?cap(faltan(g)):'Confirmado')+'</span> <span class="id">ID '+g.id+'</span></p><h3>'+cap(fecha(g.date))+', '+g.time+'</h3>'+
+        '<p>'+esc(s?s.name:'')+' en '+esc(v?v.name:'')+', '+esc(c?c.name:'')+'</p>'+
+        g.players.map(p=>'<p class="small">'+esc(p.ini)+', nivel '+p.lvl+', '+esc(p.email)+(p.wa?', '+esc(p.wa):'')+'</p>').join('')+
+        '<div class="actions">'+del('game',g.id,'Eliminar encuentro')+'</div></div>';}).join('')
+      :'<p class="muted">No hay encuentros agendados de hoy en adelante.</p>';
+    break;}
+  case 'security':
+    h+='<div class="card"><h2>Acceso del administrador</h2><dl class="kv"><dt>Primer factor</dt><dd>Usuario y contraseña <span class="tag ok">Activo</span></dd><dt>Segundo factor</dt><dd>Código de 6 dígitos (app autenticadora) <span class="tag">Preparado, sin activar</span></dd></dl>'+
+      '<p class="small muted">El inicio de sesión ya está pensado en dos pasos: hoy el segundo se omite. En la versión en línea la contraseña se guarda cifrada en el servidor y se podrá cambiar aquí.</p></div>'+
+      '<div class="card"><h2>Jugadores</h2><p class="small muted">Sin registro. Cada navegador recibe un identificador anónimo (cookie) para reconocer sus partidos.</p></div>';
+    break;
+  }
+  return h;
+}
+
+/* ---------- render ---------- */
+let lastKey='';
+function view(){
+  if(S.loading||!Store.ready)return '<p class="muted" style="padding:2rem 0">'+(S.note||'Cargando canchas…')+'</p>';
+  switch(S.view){
+    case 'venue':return vVenue();case 'calendar':return vCalendar();case 'form':return vForm();case 'done':return vDone();
+    case 'search':return vSearch();case 'mine':return vMine();case 'admin':return vAdmin();default:return vHome();
+  }
+}
+function render(){
+  const app=$('#app');if(!app)return;
+  const key=S.view+'/'+S.adm.view+'/'+S.adm.in;
+  let saved=null,focus=null;
+  const k=el=>el.name+((el.type==='radio'||el.type==='checkbox')?'|'+el.value:'');
+  if(key===lastKey){
+    saved={};app.querySelectorAll('[name]').forEach(el=>{saved[k(el)]=(el.type==='radio'||el.type==='checkbox')?el.checked:el.value;});
+    const a=document.activeElement;if(a&&a.id&&app.contains(a))focus=a.id;
+  }
+  lastKey=key;
+  app.innerHTML=view();
+  if(saved){
+    app.querySelectorAll('[name]').forEach(el=>{const kk=k(el);if(kk in saved){if(el.type==='radio'||el.type==='checkbox')el.checked=saved[kk];else el.value=saved[kk];}});
+    if(focus){const el=document.getElementById(focus);if(el)el.focus({preventScroll:true});}
+  }
+  const n=Store.ready?myGames().filter(g=>g.date>=today()).length:0;
+  $('#bar').innerHTML='<button class="brand" data-a="go" data-v="home">Peloteo</button><nav>'+
+    '<button data-a="go" data-v="mine" aria-current="'+(S.view==='mine')+'">Mis partidos'+(n?'<b>'+n+'</b>':'')+'</button>'+
+    '<button data-a="go" data-v="admin" aria-current="'+(S.view==='admin')+'">Configuración</button></nav>';
+  $('#foot').innerHTML='<p>Prototipo de demostración. '+(Store.mode==='db'?'Los datos se comparten entre quienes abran esta página.':'Los datos quedan solo en este dispositivo.')+
+    ' Juegas como '+vid+'. <button data-a="switchPlayer">Cambiar de jugador</button> para probar el emparejamiento desde un mismo teléfono.</p>'+(S.note&&Store.ready?'<p>'+esc(S.note)+'</p>':'');
+}
+function go(v){S.view=v;S.confirm=null;S.err='';render();window.scrollTo(0,0);}
+const val=n=>{const el=document.querySelector('[name="'+n+'"]');return el?el.value.trim():'';};
+
+/* ---------- acciones ---------- */
+const act={
+  go(d){if(d.v==='home'){S.gameId=null;}if(d.v==='search'){S.searched=false;S.search=null;}go(d.v);},
+  back(){go(S.fromSearch?'search':'calendar');},
+  sport(d){S.sportKey=d.k;S.sportId=null;S.venueId=null;S.date=null;
+    const l=venuesFor(d.k);if(l.length===1){act.venue({id:l[0].venue.id,sport:l[0].sport.id});}else go('venue');},
+  venue(d){S.venueId=d.id;S.sportId=d.sport;const n=new Date();S.ym={y:n.getFullYear(),m:n.getMonth()};S.date=null;go('calendar');},
+  month(d){const x=new Date(S.ym.y,S.ym.m+Number(d.n),1);S.ym={y:x.getFullYear(),m:x.getMonth()};S.date=null;render();},
+  day(d){S.date=d.d;render();const el=document.querySelector('.slots');if(el&&el.scrollIntoView)el.previousElementSibling.scrollIntoView({behavior:'smooth',block:'start'});},
+  pickTime(d){S.time=d.t;S.gameId=null;S.fromSearch=false;go('form');},
+  pickGame(d){const g=byId('games',d.id);if(!g)return;S.gameId=g.id;S.sportId=g.sportId;S.venueId=g.venueId;S.fromSearch=S.view==='search';go('form');},
+  submitPlay(){
+    const ini=val('ini').toUpperCase().replace(/[^A-ZÑÁÉÍÓÚ]/g,''),email=val('email'),wa=val('wa');
+    const r=document.querySelector('[name="lvl"]:checked');const lvl=r?Number(r.value):0;
+    S.err=ini.length<2?'Escribe tus iniciales (2 a 4 letras).':!lvl?'Elige tu nivel de juego.':!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?'Revisa el email: lo usamos para avisarte.':(wa&&wa.replace(/\D/g,'').length<8)?'Revisa el número de WhatsApp o déjalo en blanco.':'';
+    if(S.err){render();return;}
+    const me={vid,ini,lvl,email,wa};
+    const g0=S.gameId?byId('games',S.gameId):null;
+    const sport=byId('sports',g0?g0.sportId:S.sportId);
+    prefs=Object.assign({},prefs,{ini,email,wa});prefs['lvl_'+norm(sport.name)]=lvl;LS.set('peloteo_prefs',prefs);
+    let g;
+    if(S.gameId){
+      if(!g0||!isOpen(g0)){toast('Ese partido se acaba de completar. Elige otro.');go(S.fromSearch?'search':'calendar');return;}
+      if(g0.players.some(p=>p.vid===vid)){toast('Ya estás en ese partido.');go('mine');return;}
+      g=Object.assign({},g0,{players:g0.players.concat([me])});
+    }else{
+      const slot=dayInfo(sport,S.date).find(s=>s.time===S.time);
+      if(!slot||!slot.free.length){toast('Esa hora se acaba de ocupar. Elige otra.');go('calendar');return;}
+      g={id:newId('E'),venueId:S.venueId,sportId:sport.id,courtId:slot.free[0].id,date:S.date,time:S.time,capacity:Number(sport.players)||2,players:[me],createdAt:Date.now()};
+    }
+    Store.put('games',g);S.doneId=g.id;S.gameId=null;go('done');
+  },
+  lvlToggle(d){const n=Number(d.n),L=S.search.levels;S.search.levels=L.includes(n)?L.filter(x=>x!==n):L.concat([n]);render();},
+  searchRun(){const q=S.search;
+    if(!q.levels.length){toast('Elige al menos un nivel.');return;}
+    if(q.to<q.from||q.t2<q.t1){toast('Revisa el rango: el final está antes del inicio.');return;}
+    S.searched=true;render();},
+  openFromSearch(){const q=S.search;const x=venuesFor(q.sportKey).find(v=>v.venue.id===q.venueId);if(!x){go('home');return;}
+    S.sportKey=q.sportKey;act.venue({id:x.venue.id,sport:x.sport.id});},
+  cancelMine(d){
+    if(S.confirm!=='cm'+d.id){S.confirm='cm'+d.id;render();return;}
+    const g=byId('games',d.id);S.confirm=null;if(!g){render();return;}
+    const left=g.players.filter(p=>p.vid!==vid);
+    if(left.length)Store.put('games',Object.assign({},g,{players:left}));else Store.del('games',g.id);
+    toast('Cancelaste tu cupo.');render();
+  },
+  switchPlayer(){vid=newId('V');LS.set('peloteo_vid',vid);prefs={};LS.set('peloteo_prefs',prefs);toast('Ahora eres otro jugador: '+vid);go('home');},
+  admLogin(){if(val('u')==='admin'&&val('p')==='admin'){S.adm.in=true;S.adm.view='venues';S.err='';render();}else{S.err='Usuario o contraseña incorrectos.';render();}},
+  admLogout(){S.adm.in=false;go('home');},
+  admGo(d){const A=S.adm;A.view=d.v;if('venue' in d)A.venueId=d.venue||null;if('sport' in d)A.sportId=d.sport||null;if('court' in d)A.courtId=d.court||null;
+    if(d.v==='venues'){A.venueId=A.sportId=A.courtId=null;}if(d.v==='venue'){A.sportId=A.courtId=null;}if(d.v==='sport'){A.courtId=null;}
+    S.confirm=null;S.err='';render();window.scrollTo(0,0);},
+  admSaveVenue(){const A=S.adm,name=val('vn');if(!name){S.err='Escribe el nombre del lugar.';render();return;}
+    const v={id:A.venueId||newId('L'),name,address:val('va'),mapsUrl:val('vm')};Store.put('venues',v);toast('Lugar guardado.');act.admGo({v:'venue',venue:v.id});},
+  admSaveSport(){const A=S.adm,name=val('sn'),cats=[1,2,3,4,5].map(n=>val('c'+n));
+    if(!name){S.err='Escribe el nombre del deporte.';render();return;}
+    if(!cats.some(c=>c)){S.err='Define al menos una categoría.';render();return;}
+    const s={id:A.sportId||newId('D'),venueId:A.venueId,name,players:Number(val('sj'))||2,cats};Store.put('sports',s);toast('Deporte guardado.');act.admGo({v:'sport',sport:s.id});},
+  admSaveCourt(){const A=S.adm,name=val('cn');
+    const days=Array.from(document.querySelectorAll('[name="day"]:checked')).map(e=>Number(e.value));
+    const open=val('ca'),close=val('cc'),from=val('cf'),to=val('ch');
+    S.err=!name?'Escribe el nombre de la cancha.':!days.length?'Marca al menos un día de operación.':(!open||!close||close<=open)?'La hora de cierre debe ser posterior a la de apertura.':(from&&to&&to<from)?'La fecha final está antes de la inicial.':'';
+    if(S.err){render();return;}
+    const c={id:A.courtId||newId('C'),venueId:A.venueId,sportId:A.sportId,name,surface:val('cs'),status:val('ce'),notes:val('co'),mapsUrl:val('cm'),days,open,close,slot:Number(val('ct'))||60,from,to};
+    Store.put('courts',c);toast('Cancha guardada.');act.admGo({v:'sport'});},
+  admDel(d){
+    if(S.confirm!==d.t+d.id){S.confirm=d.t+d.id;render();return;}
+    S.confirm=null;
+    const rm=(col,f)=>data[col].filter(f).forEach(x=>Store.del(col,x.id));
+    if(d.t==='venue'){rm('games',g=>g.venueId===d.id);rm('courts',c=>c.venueId===d.id);rm('sports',s=>s.venueId===d.id);Store.del('venues',d.id);act.admGo({v:'venues'});}
+    else if(d.t==='sport'){rm('games',g=>g.sportId===d.id);rm('courts',c=>c.sportId===d.id);Store.del('sports',d.id);act.admGo({v:'venue'});}
+    else if(d.t==='court'){rm('games',g=>g.courtId===d.id);Store.del('courts',d.id);act.admGo({v:'sport'});}
+    else{Store.del('games',d.id);render();}
+    toast('Eliminado.');
+  },
+  seed(){const dd=demoData();COLS.forEach(c=>dd[c].forEach(o=>Store.put(c,o)));toast('Datos de ejemplo cargados.');render();}
+};
+
+/* ---------- arranque ---------- */
+function boot(){
+  document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(!el||el.disabled)return;const f=act[el.dataset.a];if(f){e.preventDefault();f(el.dataset,el);}});
+  document.addEventListener('change',e=>{const el=e.target;if(el.dataset&&el.dataset.s&&S.search){S.search[el.dataset.s]=el.value;
+    if(el.dataset.s==='sportKey'){const vs=venuesFor(el.value);S.search.venueId=vs[0]?vs[0].venue.id:'';}render();}});
+  document.addEventListener('keydown',e=>{if(e.key!=='Enter'||e.target.tagName!=='INPUT')return;
+    const b=document.querySelector('#app [data-a="submitPlay"],#app [data-a="admLogin"],#app [data-a^="admSave"]');if(b){e.preventDefault();b.click();}});
+  const c=window.claude;
+  if(c&&typeof c.use==='function'){
+    S.loading=true;render();
+    let settled=false;
+    const t=setTimeout(()=>{if(!settled){Store.startLocal();S.loading=false;render();}},3000);
+    Promise.resolve().then(()=>c.use('db')).catch(()=>null).then(db=>{
+      settled=true;clearTimeout(t);S.loading=false;
+      if(db)Store.startDb(db);else if(!Store.ready)Store.startLocal();
+      render();
+    });
+  }else{Store.startLocal();render();}
+}
+if(typeof document!=='undefined')boot();
+if(typeof module!=='undefined')module.exports={S,Store,data,demoData,view,act,dayInfo,byId,searchResults,initSearch,courtSlots};
+})();
+</script>
+</body>
+</html>
