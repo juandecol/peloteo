@@ -160,6 +160,7 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
   - Íconos: SVG en línea, trazo de 2,25 px con puntas redondas y sin relleno (pádel, tenis, día, hora, lugar, jugadores, buscar).
   - Imágenes: fotos reales de las canchas en duotono verde y negro, con las líneas de la cancha dibujadas encima; solo en el inicio y en la tarjeta de cada lugar. Mientras no haya fotos, se usan solo las líneas de la cancha en SVG.
   - Logotipo (2026-11-13): `public/img/logo.png` (pelota con calendario y "peloteo.cl"), en la esquina superior izquierda del sitio y del admin en vez de la palabra. Es una versión con fondo transparente, recortada y reducida a 648×120 a partir del PNG original con fondo verde. Alto de 1,9 rem (1,75 rem hasta 420 px y 1,45 rem hasta 360 px); en teléfonos "Buscar" queda solo con su ícono.
+  - Favicon (2026-11-13): la pelota naranja del logotipo. `public/favicon.ico` (16, 32 y 48 px), `public/img/icon-192.png` (transparente) y `public/img/apple-touch-icon.png` (180 px sobre `#0B1611`, para el acceso directo en iPhone), enlazados en `public/index.html` y `public/admin/index.html`.
   - Inicio (2026-11-13): por decisión del dueño, el héroe usa la foto `public/img/inicio-tenis.webp` (pelota en cancha de arcilla, colores naturales, sin duotono) con un degradado oscuro abajo para que el título se lea. Es decorativa: va como fondo en CSS.
 - Accesible: foco visible, etiquetas en todos los campos, objetivos táctiles amplios.
 
