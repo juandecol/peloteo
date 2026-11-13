@@ -225,3 +225,15 @@ h1.h{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:1.5rem;
 .hero.photo{background:#3A2418 url(/img/inicio-tenis.webp) 30% 45%/cover no-repeat}
 .hero.photo .shade{background:linear-gradient(180deg,rgba(11,22,17,.05) 0%,rgba(11,22,17,.35) 40%,rgba(11,22,17,.9) 100%)}
 .hero.photo p{color:rgba(255,255,255,.92)}
+/* Logotipo (public/img/logo.png, fondo transparente) en vez de la palabra. */
+.brand{display:inline-flex;align-items:center;min-height:2.75rem;padding:0 !important;line-height:0}
+.brand img{display:block;height:1.9rem;width:auto}
+/* En teléfonos el logotipo no deja espacio para el texto de "Buscar": queda
+   solo su ícono (el nombre accesible se mantiene). */
+@media (max-width:420px){
+  .brand img{height:1.75rem}
+  .bar nav .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+}
+@media (max-width:360px){
+  .brand img{height:1.45rem}
+}

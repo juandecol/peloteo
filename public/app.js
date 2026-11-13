@@ -410,8 +410,8 @@
     }
     if (S.field) { const el = app.querySelector('[name="' + S.field + '"]'); if (el) el.focus(); S.field = ''; }
     const n = activeMine();
-    $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home">Peloteo</button><nav aria-label="Principal">' +
-      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + 'Buscar</button>' +
+    $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="Peloteo, ir al inicio" width="648" height="120"></button><nav aria-label="Principal">' +
+      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">Buscar</span></button>' +
       '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">Mis partidos' + (n ? '<b aria-label="' + n + ' activos">' + n + '</b>' : '') + '</button></nav>';
   }
 
