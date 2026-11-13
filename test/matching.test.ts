@@ -245,8 +245,8 @@ test("unirse: al completarse se asigna la primera cancha libre y se confirma", a
     { initials: "MT", level: 3 },
     { initials: "RS", level: 4 },
   ]);
+  // Al completarse no se avisa "se sumó": basta "confirmado".
   assert.deepEqual(b.notices, [
-    { event: "jugador_se_sumo", game_id: a.game.id, player_ids: [a.player_id] },
     { event: "partido_confirmado", game_id: a.game.id, player_ids: [a.player_id, b.player_id] },
   ]);
   // El segundo partido confirmado del turno toma la cancha 2.
@@ -266,7 +266,7 @@ test("unirse: si al completarse no queda cancha, el encuentro queda sin cancha y
   const r = await joinGame(db, c.game.id, me(), "V-6", now);
   assert.equal(r.game.status, "sin_cancha");
   assert.equal(r.game.court_id, null);
-  assert.deepEqual(r.notices[1], {
+  assert.deepEqual(r.notices[0], {
     event: "partido_sin_cancha",
     game_id: c.game.id,
     player_ids: [c.player_id, r.player_id],

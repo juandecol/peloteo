@@ -7,7 +7,7 @@
 
 import { blockCoversSlot, courtHasSlot, parseIntList, type Court } from "./availability.ts";
 import { newId, placeholders, type Db, type DbStatement } from "./db.ts";
-import type { PendingNotice } from "./notify.ts";
+import type { CancelCause, PendingNotice } from "./notify.ts";
 import { isDate, isTime, toMinutes, type LocalNow } from "./time.ts";
 
 export class ConfigError extends Error {
@@ -91,7 +91,11 @@ function cancelGamesStmt(db: Db, ids: string[]): DbStatement[] {
   ];
 }
 
-async function cancelNotices(db: Db, gameIds: string[]): Promise<PendingNotice[]> {
+async function cancelNotices(
+  db: Db,
+  gameIds: string[],
+  cause: CancelCause = "administrador",
+): Promise<PendingNotice[]> {
   if (gameIds.length === 0) return [];
   const { results } = await db
     .prepare(`SELECT id, game_id FROM players WHERE game_id IN (${placeholders(gameIds.length)}) ORDER BY rowid`)
@@ -100,6 +104,7 @@ async function cancelNotices(db: Db, gameIds: string[]): Promise<PendingNotice[]
   return gameIds.map((g) => ({
     event: "encuentro_cancelado" as const,
     game_id: g,
+    cause,
     player_ids: results.filter((p) => p.game_id === g).map((p) => p.id),
   }));
 }
@@ -503,7 +508,7 @@ export async function createBlock(
   if (affected.length > 0 && !confirm) return { created: false, needs_confirmation: true, games: affected };
 
   const ids = affected.map((g) => g.id);
-  const notices = await cancelNotices(db, ids);
+  const notices = await cancelNotices(db, ids, "bloqueo");
   const id = newId("B");
   await db.batch([
     ...cancelGamesStmt(db, ids),

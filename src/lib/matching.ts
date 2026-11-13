@@ -445,10 +445,11 @@ export async function joinGame(
 
   const view = await publicGame(db, gameId, visitorId);
   const all = await playerIds(db, gameId);
-  const notices: PendingNotice[] = [
-    { event: "jugador_se_sumo", game_id: gameId, player_ids: all.filter((id) => id !== playerId) },
-  ];
-  if (view.status === "confirmado") {
+  // Si con este jugador se completó, basta el aviso de confirmado o sin cancha.
+  const notices: PendingNotice[] = [];
+  if (view.status === "abierto") {
+    notices.push({ event: "jugador_se_sumo", game_id: gameId, player_ids: all.filter((id) => id !== playerId) });
+  } else if (view.status === "confirmado") {
     notices.push({ event: "partido_confirmado", game_id: gameId, player_ids: all });
   } else if (view.status === "sin_cancha") {
     notices.push({ event: "partido_sin_cancha", game_id: gameId, player_ids: all });

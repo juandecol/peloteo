@@ -221,7 +221,13 @@ async function myGameRows(db: Db, where: string, params: unknown[]): Promise<MyG
   return results;
 }
 
-async function toMyGames(db: Db, rows: MyGameRow[], visitorId: string, now: LocalNow): Promise<MyGame[]> {
+async function toMyGames(
+  db: Db,
+  rows: MyGameRow[],
+  visitorId: string,
+  now: LocalNow,
+  withContacts = true,
+): Promise<MyGame[]> {
   if (rows.length === 0) return [];
   const { results: players } = await db
     .prepare(
@@ -233,7 +239,7 @@ async function toMyGames(db: Db, rows: MyGameRow[], visitorId: string, now: Loca
   return rows.map((g) => {
     const own = players.filter((p) => p.game_id === g.id);
     const iAmIn = own.some((p) => p.visitor_id === visitorId);
-    const showContacts = g.status === "confirmado" && iAmIn;
+    const showContacts = withContacts && g.status === "confirmado" && iAmIn;
     return {
       id: g.id,
       date: g.date,
@@ -276,5 +282,21 @@ export async function getMyGame(db: Db, gameId: string, visitorId: string, now: 
     [gameId, visitorId],
   );
   const [game] = await toMyGames(db, rows, visitorId, now);
+  return game ?? null;
+}
+
+/**
+ * Un encuentro visto con el enlace de cancelación de un aviso. Sirve desde
+ * cualquier dispositivo, así que no incluye datos de contacto.
+ */
+export async function getGameByToken(db: Db, token: string, now: LocalNow): Promise<MyGame | null> {
+  if (!/^[0-9a-f]{32}$/.test(token)) return null;
+  const player = await db
+    .prepare("SELECT game_id, visitor_id FROM players WHERE cancel_token = ?")
+    .bind(token)
+    .first<{ game_id: string; visitor_id: string }>();
+  if (!player) return null;
+  const rows = await myGameRows(db, "g.id = ?", [player.game_id]);
+  const [game] = await toMyGames(db, rows, player.visitor_id, now, false);
   return game ?? null;
 }

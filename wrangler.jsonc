@@ -20,6 +20,12 @@
     }
   ],
   "vars": {
-    "TIMEZONE": "America/Santiago"
+    "TIMEZONE": "America/Santiago",
+    // Correos de aviso con Resend. La clave es el secret RESEND_API_KEY
+    // (wrangler secret put RESEND_API_KEY), nunca en este archivo.
+    // En localhost los correos se muestran en la consola y no se envían.
+    "EMAIL_MODE": "resend",
+    "SITE_URL": "https://peloteo.cl",
+    "MAIL_FROM": "Peloteo <avisos@peloteo.cl>"
   }
 }

@@ -77,7 +77,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Cookie `visitor_id` aleatoria (`V-` + 32 caracteres hex), de 400 días (el máximo que aceptan los navegadores), `HttpOnly`, `Secure`, `SameSite=Lax`, creada por el servidor en la primera llamada a `/api`. Una cookie con formato inválido se reemplaza.
 - "Mis partidos" lista los encuentros de esa cookie de hoy en adelante, incluidos los cancelados por el administrador. Muestra el contacto de los compañeros solo si el encuentro está confirmado, y el botón de cancelar solo mientras falte al menos 1 hora.
 - El navegador recuerda iniciales, email, WhatsApp y nivel por deporte en `localStorage`, solo como comodidad.
-- Cada aviso incluye un enlace con `cancel_token`, para poder cancelar desde otro dispositivo.
+- Cada aviso incluye un enlace con `cancel_token`, para poder cancelar desde otro dispositivo: `https://peloteo.cl/#cancelar=<token>`. El token va en el fragmento (no llega al servidor ni queda en registros); la página lo quita de la barra de direcciones y lo envía en el cuerpo de un POST. La vista del enlace no muestra contactos.
 
 ## Administrador
 
@@ -90,7 +90,6 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros confirmados en esa cancha (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
 - **Eliminación lógica:** lugares, deportes y canchas eliminados se marcan con `deleted_at` (migración `0003`) y dejan de aparecer en todas partes; así los encuentros cancelados se conservan con sus referencias. Eliminar un lugar elimina sus deportes y canchas; eliminar un deporte, sus canchas.
 - **Detalles del login (etapa 3):** sesión de 12 horas en la cookie `peloteo_admin` (`Path=/admin`); la base guarda el SHA-256 del token, no el token. Contraseña nueva de al menos 10 caracteres, distinta del usuario y de la actual; al cambiarla se cierran las demás sesiones. Las escrituras exigen mismo origen y, en POST, JSON (defensa CSRF además de `SameSite=Strict`). `POST /admin/login/2fa` responde 501 mientras TOTP no esté implementado (etapa 7).
-- Mientras no exista el canal de correo (etapa 5), los avisos se envían por `notify()` con un canal que solo los registra; la etapa 5 le conecta el correo sin cambiar quien llama.
 
 ## Rutas
 
@@ -103,6 +102,7 @@ Públicas:
 - `POST /api/games/:id/join` unirse.
 - `GET /api/search` búsqueda de jugadores.
 - `GET /api/me/games` y `POST /api/games/:id/cancel`.
+- Enlace de cancelación de los correos: `POST /api/token/game` (ver el encuentro) y `POST /api/token/cancel` (liberar el cupo), ambos con `{ token }` en el cuerpo.
 - También: `GET /api/today` (fecha local y último día agendable, para el calendario) y `GET /api/sports/:id` (cantidades y categorías de un deporte).
 - `GET /api/search` recibe `sport_id`, `level` (nivel del jugador), `date_from`, `date_to`, `time_from` y `time_to`.
 - Errores: JSON `{ error, code, field }` con 400 (datos), 404 (no existe) o 409 (turno ocupado, partido completo, ya inscrito, cancelado).
@@ -119,7 +119,13 @@ Validar toda entrada en el servidor. Consultas siempre parametrizadas.
 
 Una sola función `notify(evento, jugador, encuentro)` con canales intercambiables:
 
-- **Etapa inicial:** correo transaccional (proveedor por definir) y, en la pantalla de confirmación, enlace `wa.me` para que los jugadores emparejados se escriban entre ellos.
+- **Etapa inicial (etapa 5, hecha):** correo con Resend y, en la pantalla de confirmación, enlace `wa.me` para que los jugadores emparejados se escriban entre ellos.
+  - Envío con `fetch` a `POST https://api.resend.com/emails` (sin SDK), en `src/lib/email.ts`. Remitente `Peloteo <avisos@peloteo.cl>`; enlaces a `https://peloteo.cl` (`SITE_URL` y `MAIL_FROM` en `vars` de `wrangler.jsonc`).
+  - La clave es el secret `RESEND_API_KEY` de Cloudflare (ya cargado). Nunca en archivos ni en `.dev.vars` del repositorio.
+  - Canales según el entorno (`src/notices.ts`): con `EMAIL_MODE = "resend"` y la clave, correo real; en `localhost` (o con `EMAIL_MODE = "consola"`, o sin clave) el correo completo se muestra en la consola de `wrangler dev` y no se envía; sin `EMAIL_MODE` (pruebas), solo el registro.
+  - Los avisos se envían después de responder (`waitUntil`). Un error de Resend se registra sin el email del jugador y no afecta la operación.
+  - Contenido: el contacto de los compañeros (email, WhatsApp y enlace `wa.me`) solo va en "partido confirmado". "Sin cancha" sugiere hasta 6 turnos con cancha libre del mismo deporte y lugar, ese día y los dos siguientes. "Encuentro cancelado" distingue si fue el administrador o un bloqueo.
+  - Al completarse un partido no se envía "jugador se sumó": basta "confirmado" o "sin cancha".
 - **Etapa posterior:** WhatsApp Cloud API con plantillas de utilidad aprobadas, solo a quienes marcaron `whatsapp_opt_in`. Requiere cuenta de Meta verificada y número dedicado; cada mensaje tiene costo.
 
 Eventos: partido publicado, jugador se sumó, partido confirmado, partido sin cancha (con otros turnos sugeridos), cupo cancelado, encuentro eliminado por el administrador.
@@ -166,7 +172,7 @@ npm run check        # genera tipos (wrangler types) y revisa con tsc
 
 - La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0004`.
 - La base local se identifica por el `database_id`: si cambia, queda una base local vacía y hay que volver a `npm run db:migrate`.
-- Despliegue: automático con Workers Builds en cada push a `main` (aparece como check "Workers Builds: peloteo" en GitHub). Hacer push equivale a desplegar en producción. Despliegue manual: `npx wrangler deploy`. Dirección pública: https://peloteo.peloteo.workers.dev
+- Despliegue: automático con Workers Builds en cada push a `main` (aparece como check "Workers Builds: peloteo" en GitHub). Hacer push equivale a desplegar en producción. Despliegue manual: `npx wrangler deploy`. Dirección pública: https://peloteo.cl (también responde https://peloteo.peloteo.workers.dev).
 - Las migraciones no se aplican solas: aplicar las nuevas a la base remota antes del push que trae el código que las necesita.
 - Para empezar de cero en local, borrar `.wrangler/state` y volver a `npm run db:migrate`.
 - `GET /api/health` devuelve el conteo de registros; sirve para comprobar que el Worker y D1 responden.
@@ -203,7 +209,6 @@ Marcar aquí la respuesta cuando se defina:
 - Encuentro `sin_cancha`: ¿cómo se "ofrecen otros turnos"? (Supuesto actual: el aviso sugiere turnos con canchas libres y los jugadores deciden; el encuentro queda `sin_cancha` hasta que cancelen.) ¿Se confirma solo si se libera una cancha en ese turno?
 - ¿Se muestran encuentros abiertos de un turno que ya no tiene canchas libres? (Supuesto actual: sí, pero al completarse quedarán `sin_cancha`.)
 - ¿Quien abre debe incluir su propio nivel entre los aceptados? (Supuesto actual: sí.)
-- Proveedor de correo y dominio definitivo.
 - PBKDF2 con 100.000 iteraciones podría superar el límite de CPU del plan gratuito de Workers (10 ms por solicitud) en el login. Verificar al desplegar; si falla, bajar las iteraciones (el formato del hash las guarda, así que se puede migrar sin perder la contraseña).
 
 Decididas (2026-11-12):
@@ -222,3 +227,4 @@ Decididas (2026-11-12):
 - Niveles: quien abre define los niveles aceptados; solo se unen jugadores de esos niveles; la búsqueda muestra solo encuentros a los que el jugador puede unirse.
 - Bloqueos: el administrador bloquea una cancha por fecha y rango de horas, con motivo opcional; el turno bloqueado no se ofrece ni se asigna; si hay un encuentro confirmado, se advierte y, al confirmar, se cancela (migración `0004`).
 - Cancelación de un cupo: hasta 1 hora antes del inicio.
+- Correo: Resend, remitente `avisos@peloteo.cl` ("Peloteo"); dominio definitivo https://peloteo.cl (2026-11-13).

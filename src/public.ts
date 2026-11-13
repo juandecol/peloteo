@@ -6,6 +6,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { sameOriginJson, type AppBindings, type AppOptions } from "./admin.ts";
 import { getDayAvailability, getMonthSummary } from "./lib/availability.ts";
 import {
+  cancelByToken,
   cancelByVisitor,
   createGame,
   joinGame,
@@ -13,8 +14,8 @@ import {
   searchGames,
   type PlayerInput,
 } from "./lib/matching.ts";
-import { deliverNotices } from "./lib/notify.ts";
-import { getMyGame, getPublicSport, listMyGames, listSportGroups, listVenuesForSport } from "./lib/public.ts";
+import { sendNotices } from "./notices.ts";
+import { getGameByToken, getMyGame, getPublicSport, listMyGames, listSportGroups, listVenuesForSport } from "./lib/public.ts";
 import { isDate, isMonth, lastBookableDate, localNow } from "./lib/time.ts";
 
 export const VISITOR_COOKIE = "visitor_id";
@@ -142,20 +143,38 @@ export function publicRoutes(options: AppOptions = {}) {
       c.get("visitor"),
       today(c),
     );
-    await deliverNotices(c.env.DB, r.notices);
+    await sendNotices(c, r.notices, today(c), options);
     return c.json({ game: await getMyGame(c.env.DB, r.game.id, c.get("visitor"), today(c)) }, 201);
   });
 
   app.post("/games/:id/join", async (c) => {
     const body = await readJson(c);
     const r = await joinGame(c.env.DB, c.req.param("id"), (body.player ?? {}) as PlayerInput, c.get("visitor"), today(c));
-    await deliverNotices(c.env.DB, r.notices);
+    await sendNotices(c, r.notices, today(c), options);
     return c.json({ game: await getMyGame(c.env.DB, r.game.id, c.get("visitor"), today(c)) });
   });
 
   app.post("/games/:id/cancel", async (c) => {
     const r = await cancelByVisitor(c.env.DB, c.req.param("id"), c.get("visitor"), today(c));
-    await deliverNotices(c.env.DB, r.notices);
+    await sendNotices(c, r.notices, today(c), options);
+    return c.json({ cancelled: true, game_deleted: r.game_deleted });
+  });
+
+  // Enlace de cancelación de los correos. El token viaja en el cuerpo (POST),
+  // nunca en la dirección, para que no quede en registros.
+  app.post("/token/game", async (c) => {
+    const body = await readJson(c);
+    const game = await getGameByToken(c.env.DB, typeof body.token === "string" ? body.token : "", today(c));
+    if (!game) {
+      return c.json({ error: "Ese enlace ya no sirve: el cupo fue cancelado o el partido ya no existe.", code: "cupo_no_existe" }, 404);
+    }
+    return c.json({ game });
+  });
+
+  app.post("/token/cancel", async (c) => {
+    const body = await readJson(c);
+    const r = await cancelByToken(c.env.DB, typeof body.token === "string" ? body.token : "", today(c));
+    await sendNotices(c, r.notices, today(c), options);
     return c.json({ cancelled: true, game_deleted: r.game_deleted });
   });
 

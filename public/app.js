@@ -43,6 +43,7 @@
     game: null, // encuentro al que unirse (vista pública)
     done: null, // encuentro recién creado o al que se unió (vista del jugador)
     mine: [], mineLoaded: false,
+    token: null, tokenGame: null, tokenDone: false, // enlace de cancelación de un correo
     search: null, searchOffers: [], results: null,
     err: '', field: '', busy: false, confirm: null,
   };
@@ -320,7 +321,46 @@
     if (!S.mineLoaded) return h + '<p class="muted">Cargando…</p>';
     if (!S.mine.length) return h + '<div class="card"><p>Aún no tienes partidos agendados.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Agendar un partido</button></div></div>';
     return h + S.mine.map((g) => gameCard(g, true)).join('') +
-      '<p class="small muted">Tus partidos quedan guardados en este navegador. Los avisos por correo traerán un enlace para cancelar desde otro dispositivo.</p>';
+      '<p class="small muted">Tus partidos quedan guardados en este navegador. Cada correo de aviso trae un enlace para cancelar desde otro dispositivo.</p>';
+  }
+
+  // ---------------- enlace de cancelación (correo) ----------------
+  function vToken() {
+    let h = '<h1 class="h">Cancelar mi cupo</h1>';
+    if (S.tokenDone) {
+      return h + '<div class="card"><p>Listo, liberaste tu cupo. Avisamos al resto de los jugadores.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Agendar otro partido</button></div></div>';
+    }
+    const g = S.tokenGame;
+    if (!g) {
+      return h + '<div class="card"><p>' + esc(S.err || 'Cargando…') + '</p>' + (S.err ? '<div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Ir al inicio</button></div>' : '') + '</div>';
+    }
+    h += gameCard(g, false);
+    if (g.status === 'cancelado') return h + '<p class="muted">Este partido ya fue cancelado; no tienes que hacer nada.</p>';
+    if (!g.can_cancel) return h + '<p class="muted">Ya no se puede cancelar: el plazo termina 1 hora antes del inicio.</p>';
+    return h + (S.err ? '<p class="err" role="alert">' + esc(S.err) + '</p>' : '') +
+      '<p>Si no puedes jugar, libera tu cupo para que otro jugador pueda tomarlo. Avisaremos al resto.</p>' +
+      '<div class="actions"><button type="button" class="btn danger" data-a="cancelToken">' + (S.confirm === 'token' ? 'Toca de nuevo para cancelar' : 'Cancelar mi cupo') + '</button>' +
+      '<button type="button" class="btn ghost" data-a="go" data-v="home">No, mantenerlo</button></div>';
+  }
+
+  async function openToken(token) {
+    S.view = 'token'; S.token = token; S.tokenGame = null; S.tokenDone = false; S.err = ''; S.confirm = null;
+    render();
+    const r = await api('POST', '/api/token/game', { token });
+    if (r.ok) S.tokenGame = r.data.game; else S.err = r.data.error || 'No pudimos abrir ese enlace.';
+    render();
+  }
+
+  // Enlaces de los correos: #cancelar=<token> y #mis-partidos. El token se
+  // quita de la barra de direcciones para que no quede en el historial.
+  function fromHash() {
+    const h = location.hash;
+    if (!h) return false;
+    const m = /^#cancelar=([0-9a-f]{32})$/.exec(h);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* sin historial */ }
+    if (m) { openToken(m[1]); return true; }
+    if (h === '#mis-partidos') { go('mine'); return true; }
+    return false;
   }
 
   function view() {
@@ -332,6 +372,7 @@
       case 'done': return vDone();
       case 'search': return vSearch();
       case 'mine': return vMine();
+      case 'token': return vToken();
       default: return vHome();
     }
   }
@@ -467,6 +508,18 @@
       if (!offer) { go('home'); return; }
       S.sportKey = S.search.sportKey; S.offers = S.searchOffers; chooseOffer(offer);
     },
+    async cancelToken() {
+      if (S.confirm !== 'token') { S.confirm = 'token'; render(); return; }
+      S.confirm = null;
+      const r = await api('POST', '/api/token/cancel', { token: S.token });
+      if (!r.ok) {
+        S.err = r.data.error || 'No se pudo cancelar.';
+        const again = await api('POST', '/api/token/game', { token: S.token });
+        S.tokenGame = again.ok ? again.data.game : null;
+        render(); return;
+      }
+      S.tokenDone = true; S.token = null; await loadMine(); render();
+    },
     async cancelMine(d) {
       if (S.confirm !== d.id) { S.confirm = d.id; render(); return; }
       S.confirm = null;
@@ -510,7 +563,8 @@
     const [today, sports] = await Promise.all([get('/api/today'), get('/api/sports')]);
     if (!today) { $('#app').innerHTML = '<div class="card"><h2>No pudimos cargar las canchas</h2><p class="muted">Revisa tu conexión y vuelve a intentarlo.</p><div class="actions"><button class="btn" onclick="location.reload()">Reintentar</button></div></div>'; return; }
     S.today = today; S.sports = sports || [];
-    S.view = 'home'; render();
+    if (!fromHash()) { S.view = 'home'; render(); }
     await loadMine(); render();
   })();
+  window.addEventListener('hashchange', () => { if (S.today) fromHash(); });
 })();

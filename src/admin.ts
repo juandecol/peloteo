@@ -40,7 +40,8 @@ import {
   type DeleteResult,
 } from "./lib/config.ts";
 import type { Db } from "./lib/db.ts";
-import { deliverNotices } from "./lib/notify.ts";
+import type { Channel } from "./lib/notify.ts";
+import { sendNotices } from "./notices.ts";
 import { localNow } from "./lib/time.ts";
 
 export const SESSION_COOKIE = "peloteo_admin";
@@ -49,11 +50,20 @@ export interface AppBindings {
   DB: Db;
   ASSETS?: { fetch(req: Request): Promise<Response> };
   TIMEZONE?: string;
+  /** "resend" en producción; "consola" muestra los correos sin enviarlos. */
+  EMAIL_MODE?: string;
+  /** Dirección pública para los enlaces de los correos. */
+  SITE_URL?: string;
+  MAIL_FROM?: string;
+  /** Secret de Cloudflare; nunca en el repositorio. */
+  RESEND_API_KEY?: string;
 }
 
 export interface AppOptions {
   /** Reloj inyectable para las pruebas. */
   now?: () => Date;
+  /** Canales de aviso inyectables para las pruebas. */
+  channels?: Channel[];
 }
 
 type Env = { Bindings: AppBindings; Variables: { session: Session } };
@@ -221,7 +231,7 @@ export function adminRoutes(options: AppOptions = {}) {
         409,
       );
     }
-    await deliverNotices(c.env.DB, r.notices);
+    await sendNotices(c, r.notices, today(c), options);
     return c.json({ deleted: true, cancelled_games: r.cancelled_games });
   }
 
@@ -276,7 +286,7 @@ export function adminRoutes(options: AppOptions = {}) {
         409,
       );
     }
-    await deliverNotices(c.env.DB, r.notices);
+    await sendNotices(c, r.notices, today(c), options);
     return c.json({ block: r.block, cancelled_games: r.cancelled_games }, 201);
   });
   api.delete("/blocks/:id", async (c) => {
@@ -287,7 +297,7 @@ export function adminRoutes(options: AppOptions = {}) {
   api.get("/games", async (c) => c.json(await listGames(c.env.DB, today(c), c.req.query("from"))));
   api.post("/games/:id/cancel", async (c) => {
     const notices = await cancelGame(c.env.DB, c.req.param("id"));
-    await deliverNotices(c.env.DB, notices);
+    await sendNotices(c, notices, today(c), options);
     return c.json({ cancelled: true });
   });
 
