@@ -15,6 +15,11 @@
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const plural = (n, uno, varios) => (n === 1 ? '1 ' + uno : n + ' ' + varios);
 
+  async function copy(text, done) {
+    try { await navigator.clipboard.writeText(text); toast(done); } catch (e) { toast('No se pudo copiar. Selecciónalo y cópialo a mano.'); }
+  }
+  function focusCode(id) { const el = document.getElementById(id || 'tfa-code'); if (el) el.focus(); }
+
   let toastT;
   function toast(m) {
     const t = $('#toast'); t.textContent = m; t.classList.add('on');
@@ -30,6 +35,8 @@
     blockErr: '', blockAffected: null, blockDraft: null,
     surfaces: SURF_DEFAULT,
     err: '', confirm: null, affected: null, busy: false,
+    // Segundo factor: estado, configuración en curso, códigos recién generados y formulario abierto.
+    tfa: null, tfaSetup: null, tfaCodes: null, tfaMode: null, tfaErr: '', useRecovery: false,
   };
 
   // ---------------- API ----------------
@@ -86,6 +93,8 @@
       const m = await api('GET', '/admin/api/meta'); if (m.ok && m.data.surfaces) S.surfaces = m.data.surfaces;
     } else if (v === 'games') {
       const r = await api('GET', '/admin/api/games'); if (r.ok) S.games = r.data;
+    } else if (v === 'security') {
+      const r = await api('GET', '/admin/2fa'); if (r.ok) S.tfa = r.data;
     }
   }
 
@@ -121,9 +130,16 @@
   }
 
   function vTwoFa() {
-    return '<h1 class="h">Segundo paso</h1><p class="muted">Escribe el código de 6 dígitos de tu app autenticadora.</p>' +
-      '<form data-f="twofa" novalidate><label class="f" for="code">Código</label><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6">' +
-      errBox() + '<div class="actions"><button class="btn block" type="submit">Verificar</button><button class="btn ghost" type="button" data-a="logout">Salir</button></div></form>';
+    const rec = S.useRecovery;
+    return '<h1 class="h">Segundo paso</h1><p class="muted">' +
+      (rec ? 'Escribe uno de tus códigos de respaldo (por ejemplo, abcd-efgh-jkmn). Cada código sirve una sola vez.'
+        : 'Abre tu app autenticadora y escribe el código de 6 dígitos de Peloteo.') + '</p>' +
+      '<form data-f="twofa" novalidate>' +
+      (rec ? '<label class="f" for="code">Código de respaldo</label><input id="code" name="code" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required>'
+        : '<label class="f" for="code">Código de 6 dígitos</label><input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" required>') +
+      errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? 'Verificando…' : 'Verificar') + '</button></div></form>' +
+      '<div class="actions"><button class="btn ghost sm" type="button" data-a="toggleRecovery">' + (rec ? 'Usar el código de la app' : 'No tengo mi teléfono: usar un código de respaldo') + '</button>' +
+      '<button class="btn ghost sm" type="button" data-a="logout">Salir</button></div>';
   }
 
   function passwordFields(withConfirm) {
@@ -264,11 +280,60 @@
     }).join('');
   }
 
+  const tfaErrBox = () => (S.tfaErr ? '<p class="err" role="alert">' + esc(S.tfaErr) + '</p>' : '');
+  const codeInput = (id, label) => '<label class="f" for="' + id + '">' + label + '</label><input id="' + id + '" name="code" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" required>';
+
+  function vRecoveryCodes() {
+    const codes = S.tfaCodes;
+    return '<div class="card warn" role="region" aria-label="Códigos de respaldo"><h3>Guarda tus códigos de respaldo</h3>' +
+      '<p>Si pierdes el teléfono, cada uno de estos códigos te deja entrar <strong>una sola vez</strong>. Guárdalos en un lugar seguro (un gestor de contraseñas o papel). No se volverán a mostrar.</p>' +
+      '<ol class="codes">' + codes.map((c) => '<li><code>' + esc(c) + '</code></li>').join('') + '</ol>' +
+      '<div class="actions"><button type="button" class="btn ghost sm" data-a="tfaCopy">Copiar</button><button type="button" class="btn ghost sm" data-a="tfaDownload">Descargar .txt</button>' +
+      '<button type="button" class="btn sm" data-a="tfaCodesDone">Ya los guardé</button></div></div>';
+  }
+
+  function vTwoFactorCard() {
+    const t = S.tfa || { enabled: !!(S.session && S.session.totp_enabled), recovery_left: 0 };
+    let h = '<div class="card"><h2>Verificación en dos pasos</h2>';
+    if (S.tfaCodes) return h + vRecoveryCodes() + '</div>';
+    if (!t.enabled && !S.tfaSetup) {
+      return h + '<p>Además de la contraseña, al entrar se pedirá un código de 6 dígitos de una app autenticadora en tu teléfono (Google Authenticator, Microsoft Authenticator, Authy, 1Password…). Así, aunque alguien sepa tu contraseña, no puede entrar sin tu teléfono.</p>' +
+        tfaErrBox() + '<div class="actions"><button type="button" class="btn" data-a="tfaSetup">Activar verificación en dos pasos</button></div></div>';
+    }
+    if (!t.enabled) {
+      const s = S.tfaSetup;
+      return h + '<ol class="steps"><li><p><strong>Escanea este código QR</strong> con tu app autenticadora.</p>' +
+        '<div class="qr">' + (window.PeloteoQR ? window.PeloteoQR.svg(s.uri, 'Código QR para la app autenticadora') : '') + '</div>' +
+        '<p class="small">¿Estás en el teléfono? <a href="' + esc(s.uri) + '">Abrir en la app autenticadora</a>.</p>' +
+        '<p class="small">¿No puedes escanearlo? Agrega una cuenta con esta clave:</p><p><code class="secret">' + esc(s.secret.replace(/(.{4})/g, '$1 ').trim()) + '</code> <button type="button" class="btn ghost sm" data-a="tfaCopySecret">Copiar clave</button></p></li>' +
+        '<li><p><strong>Escribe el código</strong> de 6 dígitos que muestra la app para Peloteo.</p>' +
+        '<form data-f="tfaEnable" novalidate>' + codeInput('tfa-code', 'Código de 6 dígitos') + tfaErrBox() +
+        '<div class="actions"><button class="btn" type="submit">Activar</button><button class="btn ghost" type="button" data-a="tfaCancel">Cancelar</button></div></form></li></ol></div>';
+    }
+    h += '<p><span class="tag ok">Activa</span> Al entrar se pide el código de tu app autenticadora.</p>' +
+      '<p class="small' + (t.recovery_left <= 3 ? ' err' : ' muted') + '">Te quedan ' + (t.recovery_left === 1 ? '1 código' : t.recovery_left + ' códigos') + ' de respaldo.' +
+      (t.recovery_left <= 3 ? ' Genera códigos nuevos para no quedarte sin acceso si pierdes el teléfono.' : '') + '</p>';
+    if (S.tfaMode === 'regen') {
+      return h + '<form data-f="tfaRegen" novalidate><p class="small">Los códigos de respaldo actuales dejarán de servir.</p>' + codeInput('tfa-code', 'Código de la app') + tfaErrBox() +
+        '<div class="actions"><button class="btn" type="submit">Generar códigos nuevos</button><button class="btn ghost" type="button" data-a="tfaMode">Cancelar</button></div></form></div>';
+    }
+    if (S.tfaMode === 'disable') {
+      return h + '<form data-f="tfaDisable" novalidate><p class="small">Sin el segundo paso, bastará la contraseña para entrar. Se cerrarán tus otras sesiones.</p>' +
+        '<label class="f" for="tfa-pw">Contraseña</label><input id="tfa-pw" name="password" type="password" autocomplete="current-password" required>' +
+        '<label class="f" for="tfa-code">Código de la app o de respaldo</label><input id="tfa-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="20" required>' +
+        tfaErrBox() + '<div class="actions"><button class="btn danger" type="submit">Desactivar</button><button class="btn ghost" type="button" data-a="tfaMode">Cancelar</button></div></form></div>';
+    }
+    return h + '<div class="actions"><button type="button" class="btn ghost sm" data-a="tfaMode" data-m="regen">Generar códigos de respaldo nuevos</button>' +
+      '<button type="button" class="btn danger sm" data-a="tfaMode" data-m="disable">Desactivar</button></div></div>';
+  }
+
   function vSecurity() {
     const s = S.session || {};
+    const on = S.tfa ? S.tfa.enabled : s.totp_enabled;
     return '<div class="card"><h2>Acceso del administrador</h2><dl class="kv"><dt>Usuario</dt><dd>' + esc(s.username) + '</dd>' +
-      '<dt>Primer factor</dt><dd>Usuario y contraseña <span class="tag ok">Activo</span></dd><dt>Segundo factor</dt><dd>Código de 6 dígitos (app autenticadora) <span class="tag">' + (s.totp_enabled ? 'Activo' : 'Preparado, sin activar') + '</span></dd></dl>' +
-      '<p class="small muted">El inicio de sesión ya está pensado en dos pasos: hoy el segundo se omite. Después de 5 intentos fallidos, el acceso se bloquea 15 minutos.</p></div>' +
+      '<dt>Primer factor</dt><dd>Usuario y contraseña <span class="tag ok">Activo</span></dd><dt>Segundo factor</dt><dd>Código de 6 dígitos (app autenticadora) <span class="tag' + (on ? ' ok' : '') + '">' + (on ? 'Activo' : 'Sin activar') + '</span></dd></dl>' +
+      '<p class="small muted">Después de 5 intentos fallidos (contraseña o código), el acceso se bloquea 15 minutos.</p></div>' +
+      vTwoFactorCard() +
       '<div class="card"><h2>Cambiar contraseña</h2><form data-f="password" novalidate>' + passwordFields(true) + errBox() +
       '<div class="actions"><button class="btn" type="submit">Guardar contraseña</button></div></form></div>' +
       '<div class="card"><h2>Jugadores</h2><p class="small muted">Sin registro. Cada navegador recibe un identificador anónimo (cookie) para reconocer sus partidos.</p></div>';
@@ -336,9 +401,38 @@
       await refreshSession(); await load(); render();
     },
     async twofa(d) {
-      const r = await api('POST', '/admin/login/2fa', { code: d.code });
-      if (!r.ok) { S.err = r.data.error; render(); return; }
+      if (!d.code || !d.code.trim()) { S.err = S.useRecovery ? 'Escribe un código de respaldo.' : 'Escribe el código de 6 dígitos.'; render(); return; }
+      S.busy = true; S.err = ''; render();
+      const r = await api('POST', '/admin/login/2fa', { code: d.code.trim() });
+      S.busy = false;
+      if (!r.ok) {
+        S.err = r.data.error || 'No se pudo verificar.';
+        if (r.status === 401) { await refreshSession(); toast(r.data.error || 'Tu sesión expiró. Vuelve a entrar.'); }
+        render(); return;
+      }
+      S.useRecovery = false;
+      if (r.data.method === 'respaldo') toast('Usaste un código de respaldo. Te quedan ' + r.data.recovery_left + '.');
       await refreshSession(); await load(); render();
+    },
+    async tfaEnable(d) {
+      S.tfaErr = '';
+      const r = await api('POST', '/admin/2fa/enable', { code: (d.code || '').trim() });
+      if (!r.ok) { S.tfaErr = r.data.error || 'No se pudo activar.'; render(); focusCode(); return; }
+      S.tfaSetup = null; S.tfaCodes = r.data.recovery_codes; S.tfa = { enabled: true, recovery_left: r.data.recovery_codes.length };
+      await refreshSession(); render(); toast('Verificación en dos pasos activada.');
+    },
+    async tfaRegen(d) {
+      S.tfaErr = '';
+      const r = await api('POST', '/admin/2fa/recovery-codes', { code: (d.code || '').trim() });
+      if (!r.ok) { S.tfaErr = r.data.error || 'No se pudo generar.'; render(); focusCode(); return; }
+      S.tfaMode = null; S.tfaCodes = r.data.recovery_codes; S.tfa = { enabled: true, recovery_left: r.data.recovery_codes.length }; render();
+    },
+    async tfaDisable(d) {
+      S.tfaErr = '';
+      const r = await api('POST', '/admin/2fa/disable', { password: d.password, code: (d.code || '').trim() });
+      if (!r.ok) { S.tfaErr = r.data.error || 'No se pudo desactivar.'; render(); focusCode(r.data.field === 'password' ? 'tfa-pw' : 'tfa-code'); return; }
+      S.tfaMode = null; S.tfa = { enabled: false, recovery_left: 0 };
+      await refreshSession(); render(); toast('Verificación en dos pasos desactivada.');
     },
     async password(d) {
       if (d.new_password !== d.new_password2) { S.err = 'Las contraseñas nuevas no coinciden.'; render(); return; }
@@ -411,6 +505,26 @@
       if ('court' in d) ids.courtId = d.court || null;
       go(d.v, ids);
     },
+    toggleRecovery() { S.useRecovery = !S.useRecovery; S.err = ''; render(); focusCode('code'); },
+    async tfaSetup() {
+      S.tfaErr = '';
+      const r = await api('POST', '/admin/2fa/setup', {});
+      if (!r.ok) { S.tfaErr = r.data.error || 'No se pudo empezar.'; render(); return; }
+      S.tfaSetup = r.data; render();
+    },
+    tfaCancel() { S.tfaSetup = null; S.tfaErr = ''; render(); },
+    tfaMode(d) { S.tfaMode = d.m || null; S.tfaErr = ''; render(); focusCode(d.m === 'disable' ? 'tfa-pw' : 'tfa-code'); },
+    async tfaCopySecret() { await copy(S.tfaSetup ? S.tfaSetup.secret : '', 'Clave copiada.'); },
+    async tfaCopy() { await copy((S.tfaCodes || []).join('\n'), 'Códigos copiados.'); },
+    tfaDownload() {
+      const text = 'Peloteo: códigos de respaldo del administrador\nCada código sirve una sola vez.\n\n' + (S.tfaCodes || []).join('\n') + '\n';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      a.download = 'peloteo-codigos-de-respaldo.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+    tfaCodesDone() { S.tfaCodes = null; render(); },
     async logout() { await api('POST', '/admin/logout', {}); S.session = { logged_in: false }; S.view = 'login'; S.err = ''; render(); },
     async del(d) {
       if (S.confirm !== d.k) { S.confirm = d.k; render(); return; }

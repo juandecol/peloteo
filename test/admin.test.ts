@@ -233,7 +233,8 @@ test("2FA: con totp_enabled, la sesión no da acceso hasta pasar el segundo paso
   assert.equal(api.status, 401);
   assert.equal(api.json.code, "segundo_factor");
   assert.equal((await t.req("POST", "/admin/password", { current_password: "admin", new_password: NEW_PASSWORD })).status, 401);
-  assert.equal((await t.req("POST", "/admin/login/2fa", { code: "123456" })).status, 501);
+  // Sin clave configurada, ningún código sirve.
+  assert.equal((await t.req("POST", "/admin/login/2fa", { code: "123456" })).status, 400);
 });
 
 // ---------------------------------------------------------------

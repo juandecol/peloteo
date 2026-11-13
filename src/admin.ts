@@ -1,7 +1,7 @@
 // Rutas del administrador, bajo /admin.
 //
 // Públicas (sin sesión): POST /login, POST /login/2fa.
-// Con sesión: POST /logout, GET /session, POST /password.
+// Con sesión: POST /logout, GET /session, POST /password, /2fa/* (segundo factor).
 // Con sesión completa (segundo factor y contraseña ya cambiada): /api/*.
 
 import { Hono, type Context, type MiddlewareHandler } from "hono";
@@ -14,6 +14,15 @@ import {
   SESSION_HOURS,
   type Session,
 } from "./lib/auth.ts";
+import {
+  disable as disable2fa,
+  enable as enable2fa,
+  passSecondFactor,
+  regenerateRecoveryCodes,
+  remainingRecoveryCodes,
+  startSetup,
+  TwoFactorError,
+} from "./lib/twofa.ts";
 import {
   cancelGame,
   ConfigError,
@@ -127,6 +136,14 @@ function sessionState(s: Session | null) {
   };
 }
 
+function twoFactorError(c: Ctx, err: unknown) {
+  if (err instanceof TwoFactorError) {
+    const status = err.code === "bloqueado" ? 429 : err.code === "codigo_incorrecto" || err.code === "contrasena_incorrecta" ? 400 : 409;
+    return c.json({ error: err.message, code: err.code, field: err.code === "contrasena_incorrecta" ? "password" : "code" }, status);
+  }
+  throw err;
+}
+
 function configError(c: Ctx, err: unknown) {
   if (err instanceof ConfigError) {
     const status = err.code === "no_existe" ? 404 : err.code === "afecta_encuentros" ? 409 : 400;
@@ -164,13 +181,22 @@ export function adminRoutes(options: AppOptions = {}) {
     });
   });
 
-  // Segundo paso. Mientras totp_enabled sea falso, la sesión ya nace validada y
-  // este paso no se usa. La verificación TOTP se implementa en la etapa 7.
+  // Segundo paso: código de la app autenticadora o un código de respaldo.
+  // Mientras totp_enabled sea falso, la sesión ya nace validada y no se usa.
   app.post("/login/2fa", async (c) => {
     const s = await getSession(c.env.DB, getCookie(c, SESSION_COOKIE), clock());
     if (!s) return c.json({ error: "Tu sesión expiró. Vuelve a entrar." }, 401);
     if (s.second_factor_passed) return c.json(sessionState(s));
-    return c.json({ error: "El segundo factor todavía no está disponible." }, 501);
+    const body = await readJson(c);
+    try {
+      const r = await passSecondFactor(c.env.DB, s, body.code, clientIp(c), clock());
+      // La sesión pasa a durar 12 horas: se renueva la cookie con el mismo token.
+      sessionCookie(c, getCookie(c, SESSION_COOKIE)!);
+      const now = await getSession(c.env.DB, getCookie(c, SESSION_COOKIE), clock());
+      return c.json({ ...sessionState(now), method: r.method, recovery_left: r.recovery_left });
+    } catch (err) {
+      return twoFactorError(c, err);
+    }
   });
 
   // ---------------- Sesión ----------------
@@ -201,6 +227,59 @@ export function adminRoutes(options: AppOptions = {}) {
     const err = await changePassword(c.env.DB, c.get("session"), body.current_password, body.new_password);
     if (err) return c.json({ error: err.message, code: err.error }, 400);
     return c.json({ ok: true });
+  });
+
+  // ---------------- Segundo factor (activar y desactivar) ----------------
+
+  const passwordChanged: MiddlewareHandler<Env> = async (c, next) => {
+    if (c.get("session").must_change_password) {
+      return c.json({ error: "Debes cambiar la contraseña antes de continuar.", code: "cambiar_contrasena" }, 403);
+    }
+    return next();
+  };
+
+  app.get("/2fa", requireSession, passwordChanged, async (c) => {
+    const s = c.get("session");
+    return c.json({
+      enabled: s.totp_enabled,
+      recovery_left: s.totp_enabled ? await remainingRecoveryCodes(c.env.DB, s.admin_id) : 0,
+    });
+  });
+
+  app.post("/2fa/setup", requireSession, passwordChanged, async (c) => {
+    try {
+      return c.json(await startSetup(c.env.DB, c.get("session")));
+    } catch (err) {
+      return twoFactorError(c, err);
+    }
+  });
+
+  app.post("/2fa/enable", requireSession, passwordChanged, async (c) => {
+    const body = await readJson(c);
+    try {
+      return c.json(await enable2fa(c.env.DB, c.get("session"), body.code, clientIp(c), clock()));
+    } catch (err) {
+      return twoFactorError(c, err);
+    }
+  });
+
+  app.post("/2fa/disable", requireSession, passwordChanged, async (c) => {
+    const body = await readJson(c);
+    try {
+      await disable2fa(c.env.DB, c.get("session"), body.password, body.code, clientIp(c), clock());
+      return c.json({ enabled: false });
+    } catch (err) {
+      return twoFactorError(c, err);
+    }
+  });
+
+  app.post("/2fa/recovery-codes", requireSession, passwordChanged, async (c) => {
+    const body = await readJson(c);
+    try {
+      return c.json(await regenerateRecoveryCodes(c.env.DB, c.get("session"), body.code, clientIp(c), clock()));
+    } catch (err) {
+      return twoFactorError(c, err);
+    }
   });
 
   // ---------------- Configuración ----------------

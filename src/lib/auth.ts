@@ -7,7 +7,8 @@
 // - Límite de intentos: con 5 fallos del mismo usuario e IP en los últimos 15
 //   minutos, el login queda bloqueado hasta que se cumplan esos 15 minutos.
 // - Flujo en dos pasos: si el administrador tiene totp_enabled, la sesión nace con
-//   second_factor_passed = 0 y debe pasar por /admin/login/2fa (pendiente: etapa 7).
+//   second_factor_passed = 0, dura solo 10 minutos y debe pasar por
+//   /admin/login/2fa (ver twofa.ts).
 
 import type { Db } from "./db.ts";
 
@@ -16,6 +17,8 @@ export const SESSION_HOURS = 12;
 export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCK_MINUTES = 15;
 export const MIN_PASSWORD_LENGTH = 10;
+/** Duración de una sesión que todavía espera el segundo factor. */
+export const PENDING_2FA_MINUTES = 10;
 
 const enc = new TextEncoder();
 
@@ -151,8 +154,10 @@ export async function login(
   }
 
   const token = toHex(crypto.getRandomValues(new Uint8Array(32)));
-  const expires = isoSeconds(new Date(now.getTime() + SESSION_HOURS * 3_600_000));
   const needs2fa = admin.totp_enabled === 1;
+  const expires = isoSeconds(
+    new Date(now.getTime() + (needs2fa ? PENDING_2FA_MINUTES * 60_000 : SESSION_HOURS * 3_600_000)),
+  );
   await db.batch([
     db.prepare("DELETE FROM login_attempts WHERE username = ? AND ip = ?").bind(username, ip),
     db.prepare("DELETE FROM sessions WHERE expires_at <= ?").bind(isoSeconds(now)),

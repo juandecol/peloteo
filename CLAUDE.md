@@ -48,7 +48,9 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
 
-**admins**: `id`, `username`, `password_hash`, `password_salt`, `totp_secret` (nulo), `totp_enabled` (falso), `must_change_password`.
+**admins**: `id`, `username`, `password_hash`, `password_salt`, `totp_secret` (nulo), `totp_enabled` (falso), `totp_last_step` (último paso TOTP aceptado, migración `0005`), `must_change_password`.
+
+**admin_recovery_codes** (códigos de respaldo del segundo factor, migración `0005`): `id` (prefijo `R-`), `admin_id`, `code_hash` (SHA-256 de `admin_id:código`, nunca el código), `used_at`, `created_at`.
 
 **sessions**: `id`, `admin_id`, `expires_at`, `second_factor_passed`.
 
@@ -84,12 +86,20 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Login de un factor: usuario y contraseña. Contraseña con hash PBKDF2 (Web Crypto) y sal por usuario. Nunca en texto plano ni en el código.
 - Usuario inicial `admin` / `admin`, creado por la migración con `must_change_password` activo: el sistema obliga a cambiarla en el primer ingreso.
 - Sesión en cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con expiración. Límite de 5 intentos fallidos; al llegar a 5 se bloquea el login de ese usuario e IP por 15 minutos, registrado en `login_attempts`.
-- **Preparado para 2FA:** el login ya es un flujo de dos pasos (`/login` y `/login/2fa`). Mientras `totp_enabled` sea falso, el segundo paso se omite. No implementar TOTP todavía, pero no cerrar el diseño.
+- **Segundo factor (etapa 7, hecha):** opcional; el administrador lo activa o desactiva en Configuración › Seguridad. Login en dos pasos (`/login` y `/login/2fa`); mientras `totp_enabled` sea falso, el segundo paso se omite.
+  - TOTP (RFC 6238): HMAC-SHA1, pasos de 30 segundos, 6 dígitos, tolerancia de ±1 paso, con Web Crypto (`src/lib/totp.ts`). Compatible con Google Authenticator, Microsoft Authenticator, Authy y 1Password.
+  - Activar: `setup` genera una clave nueva (20 bytes, base32) sin activarla; la pantalla muestra un QR (generador propio sin dependencias en `public/admin/qr.js`), la clave en texto y un enlace `otpauth://`. `enable` la activa con el primer código válido, entrega 10 códigos de respaldo (se muestran una sola vez) y cierra las demás sesiones.
+  - Cada código TOTP sirve una sola vez (`totp_last_step`, verificado con UPDATE condicionado). Los códigos de respaldo (`xxxx-xxxx-xxxx`) sirven una vez cada uno.
+  - Al entrar con 2FA activo, la sesión nace sin segundo factor y dura 10 minutos; al pasar el código se extiende a 12 horas.
+  - Los códigos incorrectos (y la contraseña incorrecta al desactivar) cuentan en `login_attempts` con el mismo límite de 5 en 15 minutos.
+  - Desactivar pide contraseña y un código (de la app o de respaldo); borra la clave y los códigos y cierra las demás sesiones. Renovar los códigos de respaldo pide un código de la app.
+  - La clave TOTP se guarda en D1 en texto (D1 cifra en reposo); quien lea la base podría generar códigos, pero igual necesitaría la contraseña.
+  - Recuperación de último recurso (sin teléfono ni códigos): `npx wrangler d1 execute peloteo --remote --command "UPDATE admins SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL WHERE username = 'admin'; DELETE FROM admin_recovery_codes; DELETE FROM sessions;"`
 - Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`). Dentro de cada cancha, sus bloqueos: crear, ver (de hoy en adelante) y quitar.
 - Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
 - **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros confirmados en esa cancha (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
 - **Eliminación lógica:** lugares, deportes y canchas eliminados se marcan con `deleted_at` (migración `0003`) y dejan de aparecer en todas partes; así los encuentros cancelados se conservan con sus referencias. Eliminar un lugar elimina sus deportes y canchas; eliminar un deporte, sus canchas.
-- **Detalles del login (etapa 3):** sesión de 12 horas en la cookie `peloteo_admin` (`Path=/admin`); la base guarda el SHA-256 del token, no el token. Contraseña nueva de al menos 10 caracteres, distinta del usuario y de la actual; al cambiarla se cierran las demás sesiones. Las escrituras exigen mismo origen y, en POST, JSON (defensa CSRF además de `SameSite=Strict`). `POST /admin/login/2fa` responde 501 mientras TOTP no esté implementado (etapa 7).
+- **Detalles del login (etapa 3):** sesión de 12 horas en la cookie `peloteo_admin` (`Path=/admin`); la base guarda el SHA-256 del token, no el token. Contraseña nueva de al menos 10 caracteres, distinta del usuario y de la actual; al cambiarla se cierran las demás sesiones. Las escrituras exigen mismo origen y, en POST, JSON (defensa CSRF además de `SameSite=Strict`). `POST /admin/login/2fa` recibe `{ code }` (TOTP o de respaldo).
 
 ## Rutas
 
@@ -109,6 +119,7 @@ Públicas:
 
 Administración (requieren sesión): `POST /admin/login`, `POST /admin/login/2fa`, `POST /admin/logout`, y CRUD bajo `/admin/api/venues`, `/sports`, `/courts`, `/games`.
 - También: `GET /admin/session` (estado de la sesión para la interfaz), `POST /admin/password` (cambio de contraseña, permitido aunque `must_change_password` esté activo), `GET /admin/api/meta` (listas para los formularios) y `POST /admin/api/games/:id/cancel`.
+- Segundo factor (sesión completa y contraseña ya cambiada): `GET /admin/2fa` (estado y códigos de respaldo restantes), `POST /admin/2fa/setup`, `POST /admin/2fa/enable` `{ code }`, `POST /admin/2fa/disable` `{ password, code }` y `POST /admin/2fa/recovery-codes` `{ code }`. Errores: 400 código o contraseña incorrectos, 409 estado inválido, 429 bloqueado.
 - Bloqueos: `GET` y `POST /admin/api/courts/:id/blocks` (el POST responde 409 si hay encuentros confirmados afectados; se repite con `?confirm=1`) y `DELETE /admin/api/blocks/:id`.
 - Eliminar (`DELETE`) con encuentros futuros afectados responde 409 con la lista; se repite con `?confirm=1` para cancelarlos y eliminar.
 - Las pantallas de configuración están en `public/admin/` y se sirven en `/admin/`. Los estilos compartidos, tomados del prototipo, en `public/styles.css`.
@@ -153,7 +164,7 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 4. Flujo público completo y "Mis partidos".
 5. Notificaciones por correo y enlaces de cancelación.
 6. WhatsApp Cloud API.
-7. Segundo factor para el administrador.
+7. Segundo factor para el administrador (hecha antes que la 6, por decisión del 2026-11-13).
 
 Terminar y probar cada etapa antes de empezar la siguiente. Un commit por cambio coherente, con mensaje en español.
 
@@ -228,3 +239,4 @@ Decididas (2026-11-12):
 - Bloqueos: el administrador bloquea una cancha por fecha y rango de horas, con motivo opcional; el turno bloqueado no se ofrece ni se asigna; si hay un encuentro confirmado, se advierte y, al confirmar, se cancela (migración `0004`).
 - Cancelación de un cupo: hasta 1 hora antes del inicio.
 - Correo: Resend, remitente `avisos@peloteo.cl` ("Peloteo"); dominio definitivo https://peloteo.cl (2026-11-13).
+- Segundo factor (2026-11-13): opcional, QR generado sin dependencias y 10 códigos de respaldo; se hizo antes de la etapa 6.

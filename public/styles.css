@@ -157,3 +157,12 @@ textarea{display:block;width:100%;margin-top:.3rem;padding:.7rem .8rem;border-ra
 /* El título del inicio no cabía en teléfonos de 320 a 400 px de ancho. */
 .hero h1{font-size:clamp(2.2rem,10.5vw,4rem)}
 .opt small{font-weight:400;opacity:.85}
+
+/* Segundo factor (configuración) */
+.steps{margin:0;padding-left:1.2rem}
+.steps>li{margin-bottom:1rem}
+.qr{width:min(240px,70vw);background:#fff;padding:.5rem;border-radius:8px;border:1px solid var(--line);margin:.4rem 0}
+.qr svg{display:block;width:100%;height:auto}
+.secret{font-size:1rem;letter-spacing:.04em;word-break:break-all;background:var(--soft);padding:.2rem .4rem;border-radius:6px}
+.codes{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.3rem 1.5rem;padding-left:1.4rem;margin:.6rem 0}
+.codes code{font-size:1rem;letter-spacing:.04em}
