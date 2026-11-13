@@ -127,13 +127,9 @@
   };
   const icon = (name, size) => '<svg width="' + (size || 24) + '" height="' + (size || 24) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[name] + '</svg>';
   const sportIcon = (key) => icon(/padel/.test(key) ? 'padel' : /tenis/.test(key) ? 'tenis' : 'pelota', 26);
-  // Líneas de una cancha vista desde arriba, de fondo en el inicio (mientras no haya fotos).
-  const COURT = '<svg class="court" viewBox="0 0 390 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">' +
-    '<g class="lines"><rect x="40" y="-20" width="310" height="360"/><line x1="195" y1="-20" x2="195" y2="340"/><line x1="40" y1="110" x2="350" y2="110"/><line x1="78" y1="-20" x2="78" y2="340"/><line x1="312" y1="-20" x2="312" y2="340"/></g>' +
-    '<circle cx="292" cy="70" r="14" fill="#D7E845"/></svg>';
-
   function vHome() {
-    let h = '<section class="hero">' + COURT + '<div class="shade"></div><h1>¿Jugamos?</h1><p>Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.</p></section>';
+    // La foto de fondo (public/img/inicio-tenis.webp) es decorativa: va en CSS, no como <img>.
+    let h = '<section class="hero photo"><div class="shade"></div><h1>¿Jugamos?</h1><p>Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.</p></section>';
     if (!S.sports.length) {
       return h + '<div class="card"><h2>Todavía no hay deportes disponibles</h2><p class="muted">Pronto aparecerán aquí las canchas para agendar.</p></div>';
     }

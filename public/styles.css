@@ -220,3 +220,8 @@ h1.h{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:1.5rem;
   .bar nav button{padding:0 .45rem;gap:.3rem}
   .brand{font-size:1rem !important}
 }
+/* Foto de fondo del inicio (cancha de arcilla). El degradado oscuro abajo
+   asegura el contraste del título y el texto, en modo claro y oscuro. */
+.hero.photo{background:#3A2418 url(/img/inicio-tenis.webp) 30% 45%/cover no-repeat}
+.hero.photo .shade{background:linear-gradient(180deg,rgba(11,22,17,.05) 0%,rgba(11,22,17,.35) 40%,rgba(11,22,17,.9) 100%)}
+.hero.photo p{color:rgba(255,255,255,.92)}
