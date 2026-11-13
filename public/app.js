@@ -117,15 +117,30 @@
     return parts.length ? '<p class="crumbs">' + parts.join('') + '</p>' : '';
   }
 
+  // Íconos de trazo (dirección visual A): 24×24, trazo 2,25 px, puntas redondas.
+  const ICONS = {
+    padel: '<ellipse cx="10" cy="9" rx="6" ry="6.5"/><path d="M14.3 13.7L20 20"/><circle cx="8" cy="8" r=".6"/><circle cx="11.5" cy="7" r=".6"/><circle cx="9.5" cy="11" r=".6"/>',
+    tenis: '<circle cx="12" cy="12" r="8.5"/><path d="M5.5 6.5c3.5 2.8 3.5 8.2 0 11M18.5 6.5c-3.5 2.8-3.5 8.2 0 11"/>',
+    pelota: '<circle cx="12" cy="12" r="8.5"/><path d="M4 10.5c5 1.5 11 1.5 16 0"/>',
+    buscar: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    seguir: '<path d="M9 5l7 7-7 7"/>',
+  };
+  const icon = (name, size) => '<svg width="' + (size || 24) + '" height="' + (size || 24) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[name] + '</svg>';
+  const sportIcon = (key) => icon(/padel/.test(key) ? 'padel' : /tenis/.test(key) ? 'tenis' : 'pelota', 26);
+  // Líneas de una cancha vista desde arriba, de fondo en el inicio (mientras no haya fotos).
+  const COURT = '<svg class="court" viewBox="0 0 390 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">' +
+    '<g class="lines"><rect x="40" y="-20" width="310" height="360"/><line x1="195" y1="-20" x2="195" y2="340"/><line x1="40" y1="110" x2="350" y2="110"/><line x1="78" y1="-20" x2="78" y2="340"/><line x1="312" y1="-20" x2="312" y2="340"/></g>' +
+    '<circle cx="292" cy="70" r="14" fill="#D7E845"/></svg>';
+
   function vHome() {
-    let h = '<section class="hero"><h1>¿Jugamos?</h1><p>Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.</p></section>';
+    let h = '<section class="hero">' + COURT + '<div class="shade"></div><h1>¿Jugamos?</h1><p>Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.</p></section>';
     if (!S.sports.length) {
       return h + '<div class="card"><h2>Todavía no hay deportes disponibles</h2><p class="muted">Pronto aparecerán aquí las canchas para agendar.</p></div>';
     }
-    h += '<h2>Elige tu deporte</h2><ul class="list">' + S.sports.map((n) =>
-      '<li><button type="button" class="row tile" data-a="sport" data-k="' + esc(n.key) + '"><span><span class="name">' + esc(n.name) + '</span><span class="meta">' +
-      plural(n.venues, 'lugar', 'lugares') + ', ' + plural(n.courts, 'cancha', 'canchas') + '</span></span><span class="go">Elegir</span></button></li>').join('') + '</ul>';
-    h += '<h2>¿Buscas con quién jugar?</h2><ul class="list"><li><button type="button" class="row" data-a="go" data-v="search"><span><span class="name">Buscar jugadores</span><span class="meta">Filtra por lugar, fechas, horas y tu nivel</span></span><span class="go">Buscar</span></button></li></ul>';
+    h += '<h2 class="label">Elige tu deporte</h2><ul class="list">' + S.sports.map((n) =>
+      '<li><button type="button" class="row sport" data-a="sport" data-k="' + esc(n.key) + '"><span class="ico">' + sportIcon(n.key) + '</span><span class="txt"><span class="name">' + esc(n.name) + '</span><span class="meta">' +
+      plural(n.venues, 'lugar', 'lugares') + ' · ' + plural(n.courts, 'cancha', 'canchas') + '</span></span><span class="chev">' + icon('seguir', 22) + '</span></button></li>').join('') + '</ul>';
+    h += '<section class="cta"><h2>¿Buscas con quién jugar?</h2><p>Mira los partidos abiertos que aceptan tu nivel y súmate.</p><button type="button" class="btn dark" data-a="go" data-v="search">Buscar jugadores</button></section>';
     return h;
   }
 
@@ -400,7 +415,7 @@
     if (S.field) { const el = app.querySelector('[name="' + S.field + '"]'); if (el) el.focus(); S.field = ''; }
     const n = activeMine();
     $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home">Peloteo</button><nav aria-label="Principal">' +
-      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">Buscar</button>' +
+      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + 'Buscar</button>' +
       '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">Mis partidos' + (n ? '<b aria-label="' + n + ' activos">' + n + '</b>' : '') + '</button></nav>';
   }
 

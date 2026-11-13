@@ -1,24 +1,25 @@
-/* Estilos de Peloteo, tomados del prototipo aprobado (referencia/peloteo.html). */
+/* Estilos de Peloteo: prototipo aprobado (referencia/peloteo.html) con la dirección
+   visual A, "Luz de cancha" (ver CLAUDE.md, Interfaz). */
 :root{
   --bg:#EDF2EC; --surface:#FFFFFF; --ink:#14251D; --muted:#5A6B61; --line:#C9D5CB;
   --court:#1E6B4F; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#1B2905; --clay:#A8492A;
-  --soft:#DDE9E0;
+  --soft:#DDE9E0; --bar:#1E6B4F; --hero:#1E6B4F;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --bg:#0E1814; --surface:#16241E; --ink:#E8F0EA; --muted:#94A79C; --line:#2A3D33;
-    --court:#2C8A66; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#1B2905; --clay:#E48E6C;
-    --soft:#1D3027;
+    --bg:#0B1611; --surface:#16261E; --ink:#EEF3EF; --muted:#9DB2A6; --line:#2A3D33;
+    --court:#2C8A66; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#0B1611; --clay:#E48E6C;
+    --soft:#1D3027; --bar:#0B1611; --hero:#123A2B;
   }
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#0E1814; --surface:#16241E; --ink:#E8F0EA; --muted:#94A79C; --line:#2A3D33;
-  --court:#2C8A66; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#1B2905; --clay:#E48E6C;
-  --soft:#1D3027;
+  --bg:#0B1611; --surface:#16261E; --ink:#EEF3EF; --muted:#9DB2A6; --line:#2A3D33;
+  --court:#2C8A66; --court-ink:#FFFFFF; --ball:#D7E845; --ball-ink:#0B1611; --clay:#E48E6C;
+  --soft:#1D3027; --bar:#0B1611; --hero:#123A2B;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -166,3 +167,56 @@ textarea{display:block;width:100%;margin-top:.3rem;padding:.7rem .8rem;border-ra
 .secret{font-size:1rem;letter-spacing:.04em;word-break:break-all;background:var(--soft);padding:.2rem .4rem;border-radius:6px}
 .codes{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.3rem 1.5rem;padding-left:1.4rem;margin:.6rem 0}
 .codes code{font-size:1rem;letter-spacing:.04em}
+
+/* ---------------------------------------------------------------
+   Dirección visual A, "Luz de cancha": cancha iluminada de noche.
+   Archivo ancho y en mayúsculas para títulos, la pelota amarilla como
+   único acento e íconos de trazo. El modo claro conserva la paleta del
+   prototipo; el oscuro es la referencia de la dirección.
+   --------------------------------------------------------------- */
+:root{--icon:#1E6B4F; --hero-lines:rgba(255,255,255,.3); --hero-fade:rgba(8,36,26,.55); --hero-text:rgba(255,255,255,.9)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--icon:#D7E845; --hero-lines:#2C8A66; --hero-fade:#0B1611; --hero-text:#C9D6CE}
+}
+:root[data-theme="dark"]{--icon:#D7E845; --hero-lines:#2C8A66; --hero-fade:#0B1611; --hero-text:#C9D6CE}
+
+body::before{background:var(--bar)}
+.bar{background:var(--bar);box-shadow:inset 0 -1px 0 rgba(255,255,255,.1);padding:.45rem 1rem}
+.brand{color:var(--ball) !important;font-stretch:125%;font-weight:900 !important;text-transform:uppercase;letter-spacing:.02em !important}
+.bar nav{gap:.25rem}
+.bar nav button{display:inline-flex;align-items:center;gap:.4rem;min-height:2.75rem;padding:0 .8rem;border-radius:99px;font-weight:600;white-space:nowrap}
+.bar nav button svg{flex:none}
+.bar nav button[aria-current="true"]{background:rgba(255,255,255,.14)}
+.bar nav b{color:var(--ball-ink);font-weight:800}
+
+h1.h{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:1.5rem;line-height:1.05}
+.cal-head strong{text-transform:uppercase;font-weight:900}
+.label{font-size:.75rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:1.6rem 0 .7rem}
+
+.hero{background:var(--hero);border-radius:16px;min-height:18.5rem;padding:1.3rem 1.2rem;display:flex;flex-direction:column;justify-content:flex-end;gap:.6rem}
+.hero::before,.hero::after{content:none}
+.hero .court{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hero .court .lines{fill:none;stroke:var(--hero-lines);stroke-width:2;vector-effect:non-scaling-stroke}
+.hero .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 30%,var(--hero-fade) 100%);pointer-events:none}
+/* "¿JUGAMOS?" ancho mide unas 8,1 veces su tamaño: se ajusta al ancho disponible (320 px o más). */
+.hero h1{font-weight:900;text-transform:uppercase;letter-spacing:0;line-height:.92;margin:0;font-size:clamp(1.8rem,calc((100vw - 4.6rem) / 8.4),3.6rem)}
+.hero p{color:var(--hero-text);font-size:1rem;line-height:1.45}
+
+.row.sport{justify-content:flex-start;gap:.9rem;min-height:4.75rem;padding:.75rem .9rem;border-radius:14px}
+.row .ico{flex:none;width:3rem;height:3rem;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--bg);border:1px solid var(--line);color:var(--icon)}
+.row .txt{flex:1;min-width:0}
+.row.sport .name{font-stretch:112%;font-weight:800;font-size:1.35rem;letter-spacing:0}
+.row .chev{flex:none;color:var(--muted)}
+
+.cta{margin:1.2rem 0 0;padding:1rem 1.1rem 1.1rem;border-radius:14px;background:var(--ball);color:var(--ball-ink)}
+.cta h2{margin:0 0 .3rem;font-stretch:112%;font-weight:800;font-size:1.25rem;line-height:1.15}
+.cta p{margin:0 0 .8rem;font-size:.95rem}
+.btn.dark{background:var(--ball-ink);color:#EEF3EF}
+.cta .btn.dark:focus-visible{outline-color:var(--ball-ink)}
+/* En teléfonos de 320 a 360 px la barra no cabía con los botones más anchos. */
+@media (max-width:360px){
+  .bar{padding:.45rem .75rem}
+  .bar nav{gap:0}
+  .bar nav button{padding:0 .45rem;gap:.3rem}
+  .brand{font-size:1rem !important}
+}

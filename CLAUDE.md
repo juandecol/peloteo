@@ -154,6 +154,11 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 - En los grupos de deportes se muestra el nombre más usado; si empatan, el que lleva tilde y no está en mayúsculas ("Pádel" antes que "PADEL").
 - El calendario solo deja avanzar a los meses que tocan el rango agendable (hoy a hoy + 15).
 - Mantener paleta, tipografía y textos del prototipo. Funcionar en modo claro y oscuro.
+- **Dirección visual elegida (2026-11-13): A · "Luz de cancha"**, evolución de la marca actual. Maquetas en https://claude.ai/artifact/4Z6QsbsZHRfGN7STZhyEPo (privado). Aplicada en `public/styles.css` (bloque "Dirección visual A" al final) y en el inicio de `public/app.js` (héroe con líneas de cancha, íconos por deporte, tarjeta de búsqueda). El título "¿JUGAMOS?" se ajusta al ancho disponible (probado desde 320 px).
+  - Paleta (modo oscuro): fondo `#0B1611`, tarjetas `#16261E`, bordes `#2A3D33`, cancha `#2C8A66` (líneas y estados), pelota `#D7E845` (acento único: acción principal, cupos e insignias), arcilla `#E48E6C` (cancelar y errores), texto `#EEF3EF`, texto secundario `#9DB2A6`. El modo claro conserva la paleta actual (fondo `#EDF2EC`, cancha `#1E6B4F`) y se sigue la preferencia del sistema.
+  - Tipografía: solo Archivo; títulos con `font-stretch: 125%`, peso 800–900 y en mayúsculas; cuerpo en ancho normal; horas y cupos con cifras tabulares.
+  - Íconos: SVG en línea, trazo de 2,25 px con puntas redondas y sin relleno (pádel, tenis, día, hora, lugar, jugadores, buscar).
+  - Imágenes: fotos reales de las canchas en duotono verde y negro, con las líneas de la cancha dibujadas encima; solo en el inicio y en la tarjeta de cada lugar. Mientras no haya fotos, se usan solo las líneas de la cancha en SVG.
 - Accesible: foco visible, etiquetas en todos los campos, objetivos táctiles amplios.
 
 ## Etapas de construcción
