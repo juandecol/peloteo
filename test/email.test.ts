@@ -104,6 +104,10 @@ test("avisos: publicado a quien abre; al completarse, confirmado a todos con can
   assert.ok(!mail.text.includes("mt@example.com")); // no su propio correo
   assert.match(mail.text, /#cancelar=[0-9a-f]{32}/);
   assert.match(mail.html, /href="https:\/\/peloteo\.cl\/#cancelar=[0-9a-f]{32}"/);
+  // Cancelar y Mis partidos van como botones visibles, no como enlaces de texto.
+  assert.match(mail.html, /<a href="https:\/\/peloteo\.cl\/#cancelar=[0-9a-f]{32}" style="display:inline-block[^"]*background:#A8492A[^"]*">Cancelar mi cupo<\/a>/);
+  assert.match(mail.html, /<a href="https:\/\/peloteo\.cl\/#mis-partidos" style="display:inline-block[^"]*border:2px solid #1E6B4F[^"]*">Ver mis partidos<\/a>/);
+  assert.match(mail.text, /Cancelar mi cupo: https:\/\/peloteo\.cl\/#cancelar=/);
 });
 
 test("avisos: pádel de 4, 'se sumó' a los que ya estaban mientras siga abierto", async () => {

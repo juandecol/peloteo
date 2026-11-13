@@ -53,7 +53,11 @@ type Block =
   | { h: string }
   | { list: { text: string; links?: [string, string][] }[] }
   | { button: [string, string] }
-  | { small: string; links?: [string, string][] };
+  | { small: string; links?: [string, string][] }
+  | { panel: { title: string; text: string; buttons: PanelButton[]; note?: string } };
+
+/** Botón de un panel: "peligro" (relleno, color arcilla) o "contorno" (verde). */
+type PanelButton = { label: string; url: string; kind: "peligro" | "contorno" };
 
 function toText(blocks: Block[]): string {
   const out: string[] = [];
@@ -65,11 +69,21 @@ function toText(blocks: Block[]): string {
       out.push(b.list.map((i) => `- ${i.text}${(i.links ?? []).map(([t, u]) => `\n  ${t}: ${u}`).join("")}`).join("\n"));
     else if ("button" in b) out.push(`${b.button[0]}: ${b.button[1]}`);
     else if ("small" in b) out.push(b.small + (b.links ?? []).map(([t, u]) => `\n${t}: ${u}`).join(""));
+    else if ("panel" in b)
+      out.push(
+        [
+          b.panel.title.toUpperCase(),
+          b.panel.text,
+          ...b.panel.buttons.map((x) => `${x.label}: ${x.url}`),
+          ...(b.panel.note ? [b.panel.note] : []),
+        ].join("\n"),
+      );
   }
   return out.join("\n\n") + "\n";
 }
 
 const GREEN = "#1E6B4F";
+const CLAY = "#A8492A";
 const link = (t: string, u: string) => `<a href="${esc(u)}" style="color:${GREEN}">${esc(t)}</a>`;
 
 function toHtml(title: string, blocks: Block[]): string {
@@ -90,6 +104,22 @@ function toHtml(title: string, blocks: Block[]): string {
           .join("")}</ul>`;
       if ("button" in b)
         return `<p style="margin:8px 0 20px"><a href="${esc(b.button[1])}" style="display:inline-block;background:${GREEN};color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">${esc(b.button[0])}</a></p>`;
+      if ("panel" in b) {
+        const btn = (x: PanelButton) => {
+          const colors =
+            x.kind === "peligro"
+              ? `background:${CLAY};border:2px solid ${CLAY};color:#ffffff`
+              : `background:#ffffff;border:2px solid ${GREEN};color:${GREEN}`;
+          return `<a href="${esc(x.url)}" style="display:inline-block;margin:6px 8px 6px 0;${colors};text-decoration:none;font-weight:bold;font-size:16px;padding:12px 22px;border-radius:8px">${esc(x.label)}</a>`;
+        };
+        return `<div style="margin:24px 0 8px;padding:16px 18px;background:#DDE9E0;border-radius:12px">
+<p style="margin:0 0 6px;font-weight:bold;font-size:16px">${esc(b.panel.title)}</p>
+<p style="margin:0 0 10px">${esc(b.panel.text)}</p>
+<div>${b.panel.buttons.map(btn).join("")}</div>${
+          b.panel.note ? `\n<p style="margin:10px 0 0;font-size:13px;color:#5b6b63">${esc(b.panel.note)}</p>` : ""
+        }
+</div>`;
+      }
       return `<p style="margin:16px 0 0;font-size:13px;color:#5b6b63">${esc(b.small)}${(b.links ?? []).map(([t, u]) => ` ${link(t, u)}`).join("")}</p>`;
     })
     .join("\n");
@@ -116,12 +146,15 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
     ["Lugar", lugar],
   ];
   const cancelBlock: Block = {
-    small:
-      "Si no puedes jugar, libera tu cupo hasta 1 hora antes del inicio para que otro jugador pueda tomarlo. Tus partidos también están en «Mis partidos», en el navegador donde agendaste.",
-    links: [
-      ["Cancelar mi cupo", cancelUrl(site, player.cancel_token)],
-      ["Mis partidos", mineUrl(site)],
-    ],
+    panel: {
+      title: "¿Cambio de planes?",
+      text: "Si no puedes jugar, libera tu cupo hasta 1 hora antes del inicio para que otro jugador pueda tomarlo.",
+      buttons: [
+        { label: "Cancelar mi cupo", url: cancelUrl(site, player.cancel_token), kind: "peligro" },
+        { label: "Ver mis partidos", url: mineUrl(site), kind: "contorno" },
+      ],
+      note: "«Mis partidos» muestra tus partidos en el navegador donde agendaste.",
+    },
   };
   const footer: Block = { small: "Recibes este correo porque te anotaste en un partido en Peloteo. No respondas a este mensaje." };
 
