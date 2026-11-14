@@ -290,3 +290,35 @@ h1.h{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:1.5rem;
 .blk.am{border-radius:8px 8px 0 0}
 .blk.pm{border-radius:0 0 8px 8px}
 .blk:focus-visible{position:relative;z-index:1}
+
+/* ---------------------------------------------------------------
+   Guía de bienvenida (4 pasos) en un <dialog>. Las ilustraciones van
+   sobre verde cancha; el cuerpo sigue el modo claro u oscuro.
+   --------------------------------------------------------------- */
+.hero .how{position:relative;align-self:flex-start;margin-top:.2rem;background:rgba(11,22,17,.45);border:1px solid rgba(255,255,255,.45);color:#fff;
+  border-radius:99px;padding:.45rem .9rem;min-height:2.5rem;font-weight:700;font-size:.9rem}
+.hero .how:hover{background:rgba(11,22,17,.65)}
+dialog.intro{width:min(25rem,calc(100vw - 2rem));max-height:calc(100dvh - 2rem);overflow:auto;padding:0;border:0;border-radius:18px;
+  background:var(--surface);color:var(--ink);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+dialog.intro::backdrop{background:rgba(11,22,17,.62)}
+.intro .art{position:relative;line-height:0;background:#1E6B4F}
+.intro .art svg{display:block;width:100%;height:auto;font-family:"Archivo",system-ui,sans-serif}
+.intro .x{position:absolute;top:.4rem;right:.4rem;width:2.75rem;height:2.75rem;border:0;border-radius:99px;background:rgba(11,22,17,.45);color:#fff;font-size:1.6rem;line-height:1}
+.intro .body{padding:1rem 1.15rem 1.15rem}
+.intro .step{margin:0;color:var(--muted);font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.intro h2{margin:.2rem 0 .45rem;font-stretch:125%;font-weight:900;text-transform:uppercase;font-size:1.3rem;line-height:1.1}
+.intro h2:focus{outline:none}
+.intro .body > p:not(.step){margin:0;line-height:1.5}
+.intro .hide{display:flex;align-items:center;gap:.6rem;margin-top:.9rem;min-height:2.75rem;font-weight:600}
+.intro .hide input{width:1.3rem;height:1.3rem;accent-color:var(--court);flex:none}
+.intro .nav{display:flex;align-items:center;gap:.5rem;margin-top:1rem}
+.intro .dots{display:flex;gap:.35rem;margin-right:auto}
+.intro .dots i{width:.5rem;height:.5rem;border-radius:99px;background:var(--line)}
+.intro .dots i.on{width:1.3rem;background:var(--court)}
+.intro .nav .btn{min-height:2.75rem;margin:0}
+@media (prefers-reduced-motion: no-preference){
+  dialog.intro[open]{animation:intro-in .22s ease-out}
+  .intro .art svg,.intro .body h2,.intro .body > p{animation:intro-step .25s ease-out}
+}
+@keyframes intro-in{from{opacity:0;transform:translateY(12px) scale(.98)}}
+@keyframes intro-step{from{opacity:0;transform:translateX(10px)}}

@@ -163,7 +163,8 @@
   const sportIcon = (key) => icon(/padel/.test(key) ? 'padel' : /tenis/.test(key) ? 'tenis' : 'pelota', 26);
   function vHome() {
     // La foto de fondo (public/img/inicio-tenis.webp) es decorativa: va en CSS, no como <img>.
-    let h = '<section class="hero photo"><div class="shade"></div><h1>¿Jugamos?</h1><p>' + (coord() ? 'Elige deporte, lugar y hora, y encuentra con quién jugar.' : 'Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.') + '</p></section>';
+    let h = '<section class="hero photo"><div class="shade"></div><h1>¿Jugamos?</h1><p>' + (coord() ? 'Elige deporte, lugar y hora, y encuentra con quién jugar.' : 'Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.') + '</p>' +
+      '<button type="button" class="how" data-a="intro">¿Cómo funciona?</button></section>';
     if (!S.sports.length) {
       return h + '<div class="card"><h2>Todavía no hay deportes disponibles</h2><p class="muted">Pronto aparecerán aquí las canchas para agendar.</p></div>';
     }
@@ -593,6 +594,7 @@
     go(d) { S.fromSearch = false; S.fromBlock = false; go(d.v); },
     block(d) { S.block = { date: d.d, half: d.h }; S.fromBlock = false; go('block'); },
     allDay() { S.preset = null; render(); },
+    intro() { openIntro(); },
     async pickOpen(d) {
       const g = (S.blockGames || []).find((x) => x.id === d.id); if (!g) return;
       const offers = (await get('/api/venues?sport=' + encodeURIComponent(g.sport.key))) || [];
@@ -652,6 +654,114 @@
     },
   };
 
+  // ---------------- guía de bienvenida ----------------
+  // Cuatro pasos que explican para qué sirve Peloteo. Aparece al entrar hasta que
+  // se marca "No volver a mostrar" en el último paso; eso se guarda en la cookie
+  // peloteo_intro (400 días). Sin marcarla, vuelve a aparecer en la próxima visita
+  // (no en la misma). Se puede abrir de nuevo con "¿Cómo funciona?" en el inicio.
+  const INTRO_COOKIE = 'peloteo_intro';
+  const introSeen = () => document.cookie.split(/;\s*/).includes(INTRO_COOKIE + '=1');
+  const introRemember = () => {
+    document.cookie = INTRO_COOKIE + '=1; Max-Age=34560000; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+  };
+  // Ilustraciones: siempre sobre verde cancha, así se ven igual en modo claro y oscuro.
+  const ART = (() => {
+    const W = 'rgba(255,255,255,.9)', L = 'rgba(255,255,255,.22)', BALL = '#D7E845', INK = '#1B2905', OR = '#EE8A24';
+    const court = '<g fill="none" stroke="' + L + '" stroke-width="1.5"><rect x="18" y="14" width="204" height="112" rx="2"/><path d="M18 30h204M18 110h204M120 14v112M60 30v80M180 30v80M60 70h120"/></g>';
+    const ball = (x, y, r) => '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + BALL + '"/>' +
+      '<path d="M' + (x - r * 0.72) + ' ' + (y - r * 0.7) + 'c' + (r * 0.55) + ' ' + (r * 0.45) + ' ' + (r * 0.55) + ' ' + (r * 0.95) + ' 0 ' + (r * 1.4) +
+      'M' + (x + r * 0.72) + ' ' + (y - r * 0.7) + 'c' + (-r * 0.55) + ' ' + (r * 0.45) + ' ' + (-r * 0.55) + ' ' + (r * 0.95) + ' 0 ' + (r * 1.4) +
+      '" fill="none" stroke="' + INK + '" stroke-opacity=".55" stroke-width="' + Math.max(1.5, r / 9) + '" stroke-linecap="round"/>';
+    const person = (x, y, c) => '<g fill="none" stroke="' + c + '" stroke-width="3.5" stroke-linecap="round"><circle cx="' + x + '" cy="' + y + '" r="10"/><path d="M' + (x - 17) + ' ' + (y + 38) + 'a17 17 0 0 1 34 0"/></g>';
+    const spark = (x, y, c) => '<path d="M' + x + ' ' + (y - 7) + 'v14M' + (x - 7) + ' ' + y + 'h14" stroke="' + c + '" stroke-width="2.5" stroke-linecap="round"/>';
+    const svg = (inner) => '<svg viewBox="0 0 240 140" aria-hidden="true" focusable="false"><rect width="240" height="140" fill="#1E6B4F"/>' + court + inner + '</svg>';
+    // Bloques AM (redondeado arriba) y PM (redondeado abajo), como en el inicio.
+    const blk = (x, y, top, fill) => '<path d="' + (top
+      ? 'M' + x + ' ' + (y + 26) + 'V' + (y + 6) + 'a6 6 0 0 1 6-6h14a6 6 0 0 1 6 6V' + (y + 26) + 'z'
+      : 'M' + x + ' ' + y + 'h26V' + (y + 20) + 'a6 6 0 0 1-6 6H' + (x + 6) + 'a6 6 0 0 1-6-6z') + '" fill="' + fill + '"/>';
+    const days = ['L', 'M', 'M', 'J', 'V'];
+    return [
+      // 1. Dos jugadores y la pelota que va de uno a otro.
+      svg(person(62, 52, W) + person(178, 52, W) +
+        '<path d="M80 50Q120 0 160 50" fill="none" stroke="' + BALL + '" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>' + ball(120, 27, 9) +
+        '<rect x="84" y="104" width="72" height="20" rx="10" fill="' + BALL + '"/><text x="120" y="118" text-anchor="middle" font-size="11" font-weight="800" fill="' + INK + '">¿JUGAMOS?</text>'),
+      // 2. El calendario de bloques AM y PM, con uno naranjo elegido y su hora.
+      svg(days.map((d, i) => {
+        const x = 47 + i * 30, pick = i === 2;
+        return '<text x="' + (x + 13) + '" y="30" text-anchor="middle" font-size="10" font-weight="800" fill="' + W + '">' + d + '</text>' +
+          blk(x, 36, true, i === 3 ? OR : '#FFFFFF') + blk(x, 64, false, pick || i === 0 ? OR : '#FFFFFF') +
+          (pick ? '<rect x="' + (x - 3.5) + '" y="60.5" width="33" height="33" rx="8" fill="none" stroke="' + BALL + '" stroke-width="3"/>' : '');
+      }).join('') +
+        '<path d="M120 96v8" stroke="' + BALL + '" stroke-width="3" stroke-linecap="round"/>' +
+        '<rect x="84" y="104" width="72" height="22" rx="11" fill="' + BALL + '"/><text x="120" y="119" text-anchor="middle" font-size="12" font-weight="800" fill="' + INK + '">18:00</text>'),
+      // 3. Dos mensajes entre los jugadores para ponerse de acuerdo.
+      svg('<path d="M30 26h138a10 10 0 0 1 10 10v16a10 10 0 0 1-10 10H50l-12 9v-9h-8a10 10 0 0 1-10-10V36a10 10 0 0 1 10-10z" fill="#FFFFFF"/>' +
+        '<text x="32" y="48" font-size="11.5" font-weight="700" fill="#14251D">¿Reservo yo la cancha?</text>' +
+        '<path d="M72 78h138a10 10 0 0 1 10 10v16a10 10 0 0 1-10 10h-8v9l-12-9H72a10 10 0 0 1-10-10V88a10 10 0 0 1 10-10z" fill="' + BALL + '"/>' +
+        '<text x="74" y="100" font-size="11.5" font-weight="700" fill="' + INK + '">¡Dale! Nos vemos ahí.</text>'),
+      // 4. A jugar: la pelota en movimiento y una celebración.
+      svg('<g stroke="' + W + '" stroke-width="3" stroke-linecap="round"><path d="M56 58h26M46 72h32M58 86h22"/></g>' + ball(120, 72, 27) +
+        spark(176, 40, OR) + spark(194, 92, BALL) + spark(66, 112, W) + spark(168, 112, OR)),
+    ];
+  })();
+  const introSteps = () => [
+    { t: 'Encuentra con quién jugar', p: '¿Tienes ganas de jugar y te falta con quién? En Peloteo te pones de acuerdo con otras personas de tu nivel para armar un partido. No necesitas crear una cuenta.' },
+    { t: 'Elige el día y la hora', p: 'Los bloques naranjos del inicio son partidos donde alguien busca jugador: súmate a uno. Si ninguno te acomoda, crea el tuyo eligiendo deporte, lugar, día y hora, y te avisamos cuando alguien se una.' },
+    { t: 'Pónganse de acuerdo', p: coord()
+      ? 'Cuando el partido se completa, les avisamos por correo y les compartimos el contacto de cada uno, para que se escriban y reserven la cancha con el club.'
+      : 'Cuando el partido se completa, les asignamos una cancha, les avisamos por correo y les compartimos el contacto de cada uno para que se escriban.' },
+    { t: '¡Listo, a jugar!', p: 'Solo queda llegar a la cancha y disfrutar. Si te surge algo, libera tu cupo desde «Mis partidos» hasta una hora antes, así otra persona puede tomarlo.' },
+  ];
+  let introStep = 0;
+  function introRender(dlg) {
+    const steps = introSteps(), st = steps[introStep], last = introStep === steps.length - 1;
+    const keep = dlg.querySelector('input[name="intro_hide"]');
+    const checked = keep ? keep.checked : false;
+    dlg.innerHTML = '<div class="art">' + ART[introStep] + '<button type="button" class="x" data-i="close" aria-label="Cerrar la guía">×</button></div>' +
+      '<div class="body"><p class="step">Paso ' + (introStep + 1) + ' de ' + steps.length + '</p>' +
+      '<h2 id="intro-t" tabindex="-1">' + esc(st.t) + '</h2><p id="intro-p">' + esc(st.p) + '</p>' +
+      (last ? '<label class="hide"><input type="checkbox" name="intro_hide"' + (checked ? ' checked' : '') + '>No volver a mostrar esta guía</label>' : '') +
+      '<div class="nav"><span class="dots" aria-hidden="true">' + steps.map((_, i) => '<i' + (i === introStep ? ' class="on"' : '') + '></i>').join('') + '</span>' +
+      (introStep ? '<button type="button" class="btn ghost sm" data-i="prev">Atrás</button>' : '<button type="button" class="btn ghost sm" data-i="close">Saltar</button>') +
+      '<button type="button" class="btn sm" data-i="' + (last ? 'done' : 'next') + '">' + (last ? '¡A jugar!' : 'Siguiente') + '</button></div></div>';
+    const h = dlg.querySelector('#intro-t'); if (h) h.focus({ preventScroll: true });
+  }
+  function openIntro() {
+    let dlg = document.getElementById('intro');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'intro'; dlg.className = 'intro';
+      dlg.setAttribute('aria-labelledby', 'intro-t'); dlg.setAttribute('aria-describedby', 'intro-p');
+      document.body.appendChild(dlg);
+      dlg.addEventListener('click', (e) => {
+        if (e.target === dlg) { dlg.close(); return; } // toque fuera de la ventana
+        const b = e.target.closest('[data-i]'); if (!b) return;
+        const a = b.dataset.i;
+        if (a === 'next' || a === 'prev') { introStep += a === 'next' ? 1 : -1; introRender(dlg); }
+        else dlg.close();
+      });
+      dlg.addEventListener('keydown', (e) => {
+        if (e.target.name === 'intro_hide') return;
+        if (e.key === 'ArrowRight' && introStep < 3) { introStep++; introRender(dlg); }
+        if (e.key === 'ArrowLeft' && introStep > 0) { introStep--; introRender(dlg); }
+      });
+      // Al cerrar de cualquier forma (botón, Esc o tocando fuera) se respeta la casilla.
+      dlg.addEventListener('close', () => {
+        const keep = dlg.querySelector('input[name="intro_hide"]');
+        if (keep && keep.checked) introRemember();
+      });
+    }
+    introStep = 0;
+    introRender(dlg);
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    const h = dlg.querySelector('#intro-t'); if (h) h.focus({ preventScroll: true });
+  }
+  function maybeIntro() {
+    if (introSeen()) return;
+    try { if (sessionStorage.getItem(INTRO_COOKIE)) return; sessionStorage.setItem(INTRO_COOKIE, '1'); } catch (e) { /* sin almacenamiento: se muestra igual */ }
+    openIntro();
+  }
+
   // ---------------- arranque ----------------
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-a]');
@@ -686,7 +796,7 @@
     const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
     if (!today) { $('#app').innerHTML = '<div class="card"><h2>No pudimos cargar las canchas</h2><p class="muted">Revisa tu conexión y vuelve a intentarlo.</p><div class="actions"><button class="btn" onclick="location.reload()">Reintentar</button></div></div>'; return; }
     S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
-    if (!fromHash()) { S.view = 'home'; render(); }
+    if (!fromHash()) { S.view = 'home'; render(); maybeIntro(); }
     await loadMine(); render();
   })();
   window.addEventListener('hashchange', () => { if (S.today) fromHash(); });
