@@ -37,6 +37,7 @@ import { renderLoginEmail } from "./lib/email.ts";
 import type { Who } from "./lib/identity.ts";
 import { getGameByToken, getMyGame, listOpenBlock, openOverview, getPublicSport, listMyGames, listSportGroups, listVenuesForSport } from "./lib/public.ts";
 import { isDate, isMonth, lastBookableDate, localNow } from "./lib/time.ts";
+import { asLang, LANG_COOKIE, SPORTS_EN, translateError } from "./lib/i18n.ts";
 
 export const VISITOR_COOKIE = "visitor_id";
 const VISITOR_RE = /^V-[0-9a-f]{32}$/;
@@ -110,6 +111,18 @@ export function publicRoutes(options: AppOptions = {}) {
     await next();
     c.header("Cache-Control", "no-store");
   });
+  // Idioma (cookie peloteo_lang): los mensajes de error se entregan en inglés si
+  // el jugador eligió ENG. Las rutas siempre los arman en español.
+  app.use("*", async (c, next) => {
+    await next();
+    const lang = asLang(getCookie(c, LANG_COOKIE));
+    if (lang === "es" || c.res.ok || !(c.res.headers.get("Content-Type") ?? "").includes("application/json")) return;
+    const body = (await c.res.clone().json().catch(() => null)) as { error?: unknown } | null;
+    if (!body || typeof body.error !== "string") return;
+    const translated = translateError(body.error, lang);
+    if (translated === body.error) return;
+    c.res = new Response(JSON.stringify({ ...body, error: translated }), { status: c.res.status, headers: c.res.headers });
+  });
   app.onError((err, c) => {
     if (err instanceof AccountError) {
       return c.json({ error: err.message, code: err.code, field: err.field }, err.code === "demasiados_enlaces" ? 429 : 400);
@@ -130,6 +143,8 @@ export function publicRoutes(options: AppOptions = {}) {
       last_bookable: lastBookableDate(now),
       court_mode: mode(c),
       whatsapp_contact: settings.whatsapp_contact,
+      // Nombres de deportes en inglés (por nombre normalizado), para la interfaz en ENG.
+      sport_names_en: SPORTS_EN,
     });
   });
 

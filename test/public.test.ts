@@ -138,7 +138,7 @@ test("lugares: los que ofrecen un deporte, con categorías, cantidades y partido
     ["Country Club Santa Martina", "D-TEN01", 2, 1],
   ]);
   assert.deepEqual(r[1].sport.match_sizes, [2, 4]); // tenis: singles o dobles (0008)
-  assert.deepEqual(r[1].sport.categories[0], { level: 1, label: "Estoy entrenando para Wimbledon" });
+  assert.deepEqual(r[1].sport.categories[0], { level: 1, label: "Estoy entrenando para Wimbledon", label_en: "Training for Wimbledon" });
   const padel = (await a.req("GET", "/api/sports/D-PAD01")).json;
   assert.deepEqual(padel.match_sizes, [2, 4]);
   assert.equal((await a.req("GET", "/api/sports/D-NOPE")).status, 404);
@@ -153,7 +153,9 @@ test("disponibilidad: resumen del mes y turnos del día", async () => {
   const a = w.browser();
   const today = (await a.req("GET", "/api/today")).json;
   // Sin COURT_MODE en el entorno, el modo es "reserva".
-  assert.deepEqual(today, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva", whatsapp_contact: false });
+  const { sport_names_en, ...rest } = today;
+  assert.deepEqual(rest, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva", whatsapp_contact: false });
+  assert.equal(sport_names_en.tenis, "Tennis");
   const month = (await a.req("GET", "/api/availability?sport_id=D-TEN01&month=2026-11")).json;
   assert.equal(month.days[0].date, "2026-11-16");
   const day = (await a.req("GET", `/api/availability?sport_id=D-TEN01&date=${DAY}`)).json;

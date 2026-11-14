@@ -21,6 +21,7 @@ import {
 } from "./availability.ts";
 import type { PendingNotice } from "./notify.ts";
 import { asWho, ownsParams, ownsSql, type Who } from "./identity.ts";
+import { asLang, type Lang } from "./i18n.ts";
 import { isUniqueViolation, newId, newToken, placeholders, type Db, type DbStatement } from "./db.ts";
 import {
   canStillCancel,
@@ -74,6 +75,8 @@ export interface PlayerInput {
   email: unknown;
   whatsapp?: unknown;
   whatsapp_opt_in?: unknown;
+  /** "en" para recibir los correos en inglés; cualquier otro valor, español. */
+  lang?: unknown;
 }
 
 export interface ValidPlayer {
@@ -82,6 +85,8 @@ export interface ValidPlayer {
   email: string;
   whatsapp: string | null;
   whatsapp_opt_in: 0 | 1;
+  /** Idioma de los correos de este cupo. */
+  lang: Lang;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -119,7 +124,7 @@ export function validatePlayer(input: PlayerInput, allowedLevels: number[]): Val
   }
 
   const optIn = whatsapp !== null && (input.whatsapp_opt_in === true || input.whatsapp_opt_in === 1);
-  return { initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0 };
+  return { initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0, lang: asLang(input.lang) };
 }
 
 /** Cantidad de jugadores elegida: debe ser una de las permitidas por el deporte. */
@@ -286,11 +291,11 @@ function insertPlayer(
   return db
     .prepare(
       `INSERT INTO players
-         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
+         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
     )
     .bind(
-      id, gameId, who.visitorId, who.userId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token,
+      id, gameId, who.visitorId, who.userId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token, p.lang,
       ...conditionParams,
     );
 }

@@ -68,7 +68,10 @@ test("validación: normaliza iniciales, email y WhatsApp", () => {
     { initials: "j.p.", level: "2", email: " JP@Mail.CL", whatsapp: "+56 9 1234 5678", whatsapp_opt_in: true },
     [1, 2, 3],
   );
-  assert.deepEqual(p, { initials: "JP", level: 2, email: "jp@mail.cl", whatsapp: "+56912345678", whatsapp_opt_in: 1 });
+  assert.deepEqual(p, { initials: "JP", level: 2, email: "jp@mail.cl", whatsapp: "+56912345678", whatsapp_opt_in: 1, lang: "es" });
+  // Idioma de los correos: "en" si se pide; cualquier otro valor, español.
+  assert.equal(validatePlayer(me({ lang: "en" }), [3]).lang, "en");
+  assert.equal(validatePlayer(me({ lang: "fr" }), [3]).lang, "es");
 });
 
 test("validación: acepta letras con tilde y ñ", () => {

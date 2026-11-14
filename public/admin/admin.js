@@ -205,6 +205,7 @@
     const sp = S.sportId ? S.sport : null;
     const sizes = sp ? sp.match_sizes : [2];
     const cats = sp ? sp.categories : ['', '', '', '', ''];
+    const catsEn = sp && sp.categories_en ? sp.categories_en : ['', '', '', '', ''];
     return back(sp ? 'sport' : 'venue') + '<h2>' + (sp ? 'Editar deporte' : 'Nuevo deporte en ' + esc(S.venue ? S.venue.name : '')) + '</h2><form data-f="sport" novalidate>' +
       '<label class="f" for="sn">Nombre del deporte</label><input id="sn" name="name" type="text" maxlength="40" placeholder="Tenis" value="' + esc(sp ? sp.name : '') + '" required>' +
       '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Jugadores por partido <small class="muted" style="font-weight:400">(quien abre el partido elige entre las marcadas)</small></legend><div class="checks">' +
@@ -212,7 +213,9 @@
       '<div class="checks"><label><input type="checkbox" name="visible" value="1"' + (!sp || sp.visible ? ' checked' : '') + '>Visible para los jugadores</label></div>' +
       '<p class="small muted">Desmárcalo para preparar el deporte sin que aparezca en el sitio. Aunque esté marcado, solo aparece cuando tiene al menos una cancha operativa.</p>' +
       '<h3>Categorías <span class="muted small">(1 avanzado, 5 principiante; deja en blanco las que no uses)</span></h3>' +
-      [1, 2, 3, 4, 5].map((n) => '<label class="f" for="c' + n + '">Categoría ' + n + '</label><input id="c' + n + '" name="c' + n + '" type="text" maxlength="60" placeholder="' + (n === 1 ? 'Estoy entrenando para Wimbledon' : n === 5 ? 'Apenas logro pasar la pelota' : 'Texto para el nivel ' + n) + '" value="' + esc(cats[n - 1] || '') + '">').join('') +
+      '<p class="small muted">Cada categoría puede tener su texto en inglés, que se muestra a quienes usan el sitio en ENG. Si lo dejas en blanco, se muestra el texto en español.</p>' +
+      [1, 2, 3, 4, 5].map((n) => '<label class="f" for="c' + n + '">Categoría ' + n + '</label><input id="c' + n + '" name="c' + n + '" type="text" maxlength="60" placeholder="' + (n === 1 ? 'Estoy entrenando para Wimbledon' : n === 5 ? 'Apenas logro pasar la pelota' : 'Texto para el nivel ' + n) + '" value="' + esc(cats[n - 1] || '') + '">' +
+        '<label class="f small" for="ce' + n + '" style="font-weight:400;margin-top:.35rem">En inglés <small>(opcional)</small></label><input id="ce' + n + '" name="ce' + n + '" type="text" maxlength="60" lang="en" placeholder="' + (n === 1 ? 'Training for Wimbledon' : n === 5 ? 'I can barely get the ball over' : 'Text for level ' + n) + '" value="' + esc(catsEn[n - 1] || '') + '">').join('') +
       errBox() + affectedBox('delConfirm') + '<div class="actions"><button class="btn" type="submit">Guardar deporte</button>' + (sp ? delBtn('sport', 'Eliminar deporte') : '') + '</div></form>';
   }
 
@@ -474,7 +477,7 @@
       toast('Lugar guardado.'); S.venue = r.data; await go('venue', { venueId: r.data.id });
     },
     async sport(d) {
-      const body = { name: d.name, match_sizes: d.match_sizes || [], visible: (d.visible || []).length > 0, categories: [1, 2, 3, 4, 5].map((n) => d['c' + n] || ''), venue_id: S.venueId };
+      const body = { name: d.name, match_sizes: d.match_sizes || [], visible: (d.visible || []).length > 0, categories: [1, 2, 3, 4, 5].map((n) => d['c' + n] || ''), categories_en: [1, 2, 3, 4, 5].map((n) => d['ce' + n] || ''), venue_id: S.venueId };
       const r = S.sportId ? await api('PUT', '/admin/api/sports/' + S.sportId, body) : await api('POST', '/admin/api/sports', body);
       if (!r.ok) { fail(r); return; }
       toast('Deporte guardado.'); await go('sport', { sportId: r.data.id });

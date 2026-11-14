@@ -206,6 +206,8 @@ export interface Sport {
   match_sizes: number[];
   /** Textos de las categorías por nivel: índice 0 = nivel 1. Vacío = sin categoría. */
   categories: string[];
+  /** Textos en inglés de las categorías (opcionales): índice 0 = nivel 1. */
+  categories_en: string[];
   courts: number;
   /** Canchas operativas: sin ninguna, el deporte no aparece en el sitio aunque esté visible. */
   active_courts: number;
@@ -227,15 +229,26 @@ export async function listSports(db: Db, venueId: string): Promise<Sport[]> {
   if (results.length === 0) return [];
   const { results: cats } = await db
     .prepare(
-      `SELECT sport_id, level, label FROM categories
+      `SELECT sport_id, level, label, label_en FROM categories
        WHERE sport_id IN (${placeholders(results.length)}) ORDER BY level`,
     )
     .bind(...results.map((s) => s.id))
-    .all<{ sport_id: string; level: number; label: string }>();
+    .all<{ sport_id: string; level: number; label: string; label_en: string | null }>();
   return results.map((s) => {
     const labels = ["", "", "", "", ""];
-    for (const c of cats) if (c.sport_id === s.id) labels[c.level - 1] = c.label;
-    return { ...s, visible: s.visible === 1, match_sizes: parseIntList(s.match_sizes, 2, 4), categories: labels };
+    const labelsEn = ["", "", "", "", ""];
+    for (const c of cats) {
+      if (c.sport_id !== s.id) continue;
+      labels[c.level - 1] = c.label;
+      labelsEn[c.level - 1] = c.label_en ?? "";
+    }
+    return {
+      ...s,
+      visible: s.visible === 1,
+      match_sizes: parseIntList(s.match_sizes, 2, 4),
+      categories: labels,
+      categories_en: labelsEn,
+    };
   });
 }
 
@@ -260,15 +273,24 @@ function validateSport(input: Record<string, unknown>) {
   if (raw.length > 5) throw invalid("Máximo 5 categorías.", "categories");
   const categories = Array.from({ length: 5 }, (_, i) => optionalText(raw[i], 60, `categories.${i + 1}`));
   if (!categories.some((c) => c)) throw invalid("Define al menos una categoría.", "categories");
+  // Texto en inglés: opcional y solo para niveles que tienen texto en español.
+  const rawEn = Array.isArray(input.categories_en) ? input.categories_en : [];
+  const categoriesEn = Array.from({ length: 5 }, (_, i) =>
+    categories[i] ? optionalText(rawEn[i], 60, `categories_en.${i + 1}`) : "",
+  );
   // Sin el campo: visible al crear y sin cambios al editar.
   const visible = typeof input.visible === "boolean" ? (input.visible ? 1 : 0) : null;
-  return { name, match_sizes: sizes.join(","), categories, visible };
+  return { name, match_sizes: sizes.join(","), categories, categoriesEn, visible };
 }
 
-function categoryStatements(db: Db, sportId: string, categories: string[]): DbStatement[] {
+function categoryStatements(db: Db, sportId: string, categories: string[], categoriesEn: string[]): DbStatement[] {
   return categories.flatMap((label, i) =>
     label
-      ? [db.prepare("INSERT INTO categories (sport_id, level, label) VALUES (?, ?, ?)").bind(sportId, i + 1, label)]
+      ? [
+          db
+            .prepare("INSERT INTO categories (sport_id, level, label, label_en) VALUES (?, ?, ?, ?)")
+            .bind(sportId, i + 1, label, categoriesEn[i] || null),
+        ]
       : [],
   );
 }
@@ -280,7 +302,7 @@ export async function createSport(db: Db, venueId: string, input: Record<string,
   await db.batch([
     db.prepare("INSERT INTO sports (id, venue_id, name, match_sizes, visible) VALUES (?, ?, ?, ?, ?)")
       .bind(id, venueId, s.name, s.match_sizes, s.visible ?? 1),
-    ...categoryStatements(db, id, s.categories),
+    ...categoryStatements(db, id, s.categories, s.categoriesEn),
   ]);
   return getSport(db, id);
 }
@@ -292,7 +314,7 @@ export async function updateSport(db: Db, id: string, input: Record<string, unkn
     db.prepare("UPDATE sports SET name = ?, match_sizes = ?, visible = COALESCE(?, visible) WHERE id = ?")
       .bind(s.name, s.match_sizes, s.visible, id),
     db.prepare("DELETE FROM categories WHERE sport_id = ?").bind(id),
-    ...categoryStatements(db, id, s.categories),
+    ...categoryStatements(db, id, s.categories, s.categoriesEn),
   ]);
   return getSport(db, id);
 }

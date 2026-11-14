@@ -33,6 +33,8 @@ export interface NoticePlayer {
   whatsapp: string | null;
   whatsapp_opt_in: number;
   cancel_token: string;
+  /** Idioma de sus correos ("es" o "en"). */
+  lang?: string;
 }
 
 /** Turno con cancha libre que se sugiere a un encuentro sin cancha. */
@@ -150,7 +152,7 @@ export async function loadNoticeGame(db: Db, gameId: string): Promise<NoticeGame
   if (!game) return null;
   const { results: players } = await db
     .prepare(
-      `SELECT id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token FROM players
+      `SELECT id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang FROM players
        WHERE game_id = ? ORDER BY rowid`,
     )
     .bind(gameId)

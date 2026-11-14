@@ -322,3 +322,60 @@ dialog.intro::backdrop{background:rgba(11,22,17,.62)}
 }
 @keyframes intro-in{from{opacity:0;transform:translateY(12px) scale(.98)}}
 @keyframes intro-step{from{opacity:0;transform:translateX(10px)}}
+
+/* ---------------------------------------------------------------
+   Selector de idioma (ESP / ENG) en la barra, al lado de Buscar.
+   Bandera y código en línea; en teléfonos, el código va bajo la bandera.
+   --------------------------------------------------------------- */
+.bar nav{align-items:center}
+.langs{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:99px;background:rgba(0,0,0,.18)}
+.bar nav .langs button{min-height:2.5rem;padding:0 .55rem;gap:.35rem;font-size:.75rem;font-weight:800;letter-spacing:.03em;opacity:.72}
+.bar nav .langs button[aria-pressed="true"]{background:rgba(255,255,255,.2);opacity:1}
+.langs .flag{width:1.25rem;height:auto;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.25);flex:none}
+@media (max-width:420px){
+  .bar nav .langs button{flex-direction:column;justify-content:center;gap:1px;min-height:2.75rem;padding:0 .4rem;font-size:.6rem;line-height:1}
+  .langs .flag{width:1.15rem}
+  .bar nav button[data-v="mine"]{position:relative}
+  .bar nav button[data-v="mine"] b{position:absolute;top:.2rem;right:-.1rem;margin:0;font-size:.65rem;padding:0 .3rem;line-height:1.35}
+}
+/* "LET'S PLAY?" es más ancho que "¿JUGAMOS?": se ajusta con otro divisor. */
+.hero h1.en{font-size:clamp(1.8rem,calc((100vw - 4.6rem) / 10.4),3.6rem)}
+/* Con el selector de idioma, la barra debe caber desde 320 px: en teléfonos los
+   botones quedan solo con su ícono y el logotipo se achica un poco. */
+@media (max-width:420px){
+  .bar{padding-left:.75rem;padding-right:.75rem}
+  .bar nav{gap:0}
+  .bar nav > button,.bar nav .navlink{min-width:2.5rem;padding:0 .4rem;justify-content:center}
+  .brand img{height:1.6rem}
+}
+@media (max-width:360px){.brand img{height:1.45rem}}
+@media (max-width:340px){
+  .brand img{height:1.2rem}
+  .bar nav .langs button{padding:0 .3rem}
+}
+/* "TODAY" es más largo que "HOY": más chico para que no choque con el día siguiente. */
+html[lang="en"] .day8.today .dl{font-size:.58rem;letter-spacing:0}
+@media (max-width:360px){html[lang="en"] .day8.today .dl{font-size:.5rem}}
+/* Hasta 640 px "Buscar" queda solo con su ícono (como "Configuración"), para que quepa el selector de idioma. */
+@media (max-width:640px){
+  .bar nav button[data-v="search"] .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+}
+/* Entre 421 y 600 px tampoco caben los textos: misma barra de solo íconos que en teléfonos. */
+@media (max-width:600px){
+  .bar{padding-left:.75rem;padding-right:.75rem}
+  .bar nav{gap:0}
+  .bar nav .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  .bar nav > button,.bar nav .navlink{min-width:2.5rem;padding:0 .4rem;justify-content:center}
+  .bar nav .langs button{flex-direction:column;justify-content:center;gap:1px;min-height:2.75rem;padding:0 .4rem;font-size:.6rem;line-height:1}
+  .langs .flag{width:1.15rem}
+  .bar nav button[data-v="mine"]{position:relative}
+  .bar nav button[data-v="mine"] b{position:absolute;top:.2rem;right:-.1rem;margin:0;font-size:.65rem;padding:0 .3rem;line-height:1.35}
+  .brand img{height:1.6rem}
+}
+@media (max-width:360px){.brand img{height:1.45rem}}
+@media (max-width:340px){.brand img{height:1.2rem}.bar nav .langs button{padding:0 .3rem}}
+/* Hasta 800 px "Buscar" y "Configuración" van solo con su ícono, para que quepan ESP/ENG y "Mis partidos". */
+@media (max-width:800px){
+  .bar nav button[data-v="search"] .lbl,.bar nav .navlink .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  .bar nav .navlink{padding:0 .55rem}
+}

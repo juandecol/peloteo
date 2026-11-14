@@ -82,7 +82,8 @@ export interface PublicSport {
   id: string;
   name: string;
   match_sizes: number[];
-  categories: { level: number; label: string }[];
+  /** label_en: texto opcional en inglés de la categoría (nulo si no se definió). */
+  categories: { level: number; label: string; label_en: string | null }[];
 }
 
 export interface VenueOffer {
@@ -96,11 +97,11 @@ async function categoriesOf(db: Db, sportIds: string[]) {
   if (sportIds.length === 0) return [];
   const { results } = await db
     .prepare(
-      `SELECT sport_id, level, label FROM categories
+      `SELECT sport_id, level, label, label_en FROM categories
        WHERE sport_id IN (${placeholders(sportIds.length)}) ORDER BY level`,
     )
     .bind(...sportIds)
-    .all<{ sport_id: string; level: number; label: string }>();
+    .all<{ sport_id: string; level: number; label: string; label_en: string | null }>();
   return results;
 }
 
@@ -131,7 +132,7 @@ export async function listVenuesForSport(db: Db, key: string, now: LocalNow): Pr
         id: s.id,
         name: s.name,
         match_sizes: parseIntList(s.match_sizes, 2, 4),
-        categories: cats.filter((c) => c.sport_id === s.id).map(({ level, label }) => ({ level, label })),
+        categories: cats.filter((c) => c.sport_id === s.id).map(({ level, label, label_en }) => ({ level, label, label_en })),
       },
       courts: s.courts,
       open_games: open.filter((g) => g.sport_id === s.id && isSlotOpen(g.date, g.time, now)).length,
@@ -153,7 +154,7 @@ export async function getPublicSport(db: Db, sportId: string): Promise<(PublicSp
     venue_id: s.venue_id,
     name: s.name,
     match_sizes: parseIntList(s.match_sizes, 2, 4),
-    categories: cats.map(({ level, label }) => ({ level, label })),
+    categories: cats.map(({ level, label, label_en }) => ({ level, label, label_en })),
   };
 }
 

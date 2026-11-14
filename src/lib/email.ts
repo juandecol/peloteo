@@ -10,6 +10,7 @@
 import type { Channel, NoticeEvent, NoticeGame, NoticePlayer, SuggestedSlot } from "./notify.ts";
 import { parseIntList } from "./availability.ts";
 import { dayOfWeek } from "./time.ts";
+import { asLang, sportNameIn, type Lang } from "./i18n.ts";
 
 const RESEND_URL = "https://api.resend.com/emails";
 
@@ -21,19 +22,25 @@ export interface Email {
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/** "sábado 21 de noviembre" */
-export function fechaLarga(date: string): string {
+/** "sábado 21 de noviembre" o, en inglés, "Saturday, November 21". */
+export function fechaLarga(date: string, lang: Lang = "es"): string {
   const [, m, d] = date.split("-").map(Number);
-  return `${DIAS[dayOfWeek(date)]} ${d} de ${MESES[m! - 1]}`;
+  return lang === "en" ? `${DAYS[dayOfWeek(date)]}, ${MONTHS[m! - 1]} ${d}` : `${DIAS[dayOfWeek(date)]} ${d} de ${MESES[m! - 1]}`;
 }
 
-const faltan = (n: number) => (n === 1 ? "falta 1 jugador" : `faltan ${n} jugadores`);
+const faltan = (n: number, lang: Lang) =>
+  lang === "en"
+    ? n === 1 ? "1 player needed" : `${n} players needed`
+    : n === 1 ? "falta 1 jugador" : `faltan ${n} jugadores`;
 
-function nivelesTexto(levels: number[]): string {
-  if (levels.length === 5) return "todos los niveles";
-  if (levels.length === 1) return `nivel ${levels[0]}`;
-  return `niveles ${levels.slice(0, -1).join(", ")} y ${levels[levels.length - 1]}`;
+function nivelesTexto(levels: number[], lang: Lang): string {
+  const y = lang === "en" ? "and" : "y";
+  if (levels.length === 5) return lang === "en" ? "all levels" : "todos los niveles";
+  if (levels.length === 1) return `${lang === "en" ? "level" : "nivel"} ${levels[0]}`;
+  return `${lang === "en" ? "levels" : "niveles"} ${levels.slice(0, -1).join(", ")} ${y} ${levels[levels.length - 1]}`;
 }
 
 function esc(s: string): string {
@@ -88,7 +95,7 @@ const GREEN = "#1E6B4F";
 const CLAY = "#A8492A";
 const link = (t: string, u: string) => `<a href="${esc(u)}" style="color:${GREEN}">${esc(t)}</a>`;
 
-function toHtml(title: string, blocks: Block[]): string {
+function toHtml(title: string, blocks: Block[], lang: Lang = "es"): string {
   const body = blocks
     .map((b) => {
       if ("p" in b) return `<p style="margin:0 0 16px">${esc(b.p)}</p>`;
@@ -125,7 +132,7 @@ function toHtml(title: string, blocks: Block[]): string {
       return `<p style="margin:16px 0 0;font-size:13px;color:#5b6b63">${esc(b.small)}${(b.links ?? []).map(([t, u]) => ` ${link(t, u)}`).join("")}</p>`;
     })
     .join("\n");
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(title)}</title></head>
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(title)}</title></head>
 <body style="margin:0;padding:0;background:#f4f1ea">
 <div style="max-width:560px;margin:0 auto;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1b2621">
 <p style="margin:0 0 16px;font-weight:bold;font-size:18px;color:${GREEN}">Peloteo</p>
@@ -134,33 +141,52 @@ ${body}
 </div></body></html>`;
 }
 
-/** Arma el correo de un evento para un jugador. `site` es la dirección pública, sin "/" final. */
+/** Arma el correo de un evento para un jugador, en su idioma (players.lang). `site` es la dirección pública, sin "/" final. */
 export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: NoticeGame, site: string): Email {
-  const cuando = `${fechaLarga(game.date)} a las ${game.time}`;
+  const lang = asLang(player.lang);
+  const en = lang === "en";
+  const T = (es: string, eng: string) => (en ? eng : es);
+  const sport = sportNameIn(game.sport_name, lang);
+  const fecha = (d: string) => fechaLarga(d, lang);
+  const cuando = en ? `${fecha(game.date)} at ${game.time}` : `${fecha(game.date)} a las ${game.time}`;
   // Coordinación: Peloteo no asigna cancha; los jugadores la reservan con el club.
   const coord = game.court_mode === "coordinacion";
   const missing = Math.max(0, game.capacity - game.players.length);
+  const falta = (n: number) => faltan(n, lang);
   const others = game.players.filter((p) => p.id !== player.id);
-  const quienes = (ps: NoticePlayer[]) => ps.map((p) => `${p.initials} (nivel ${p.level})`).join(", ");
+  const nivel = (p: NoticePlayer) => `${p.initials} (${T("nivel", "level")} ${p.level})`;
+  const quienes = (ps: NoticePlayer[]) => ps.map(nivel).join(", ");
   const lugar = game.venue_name + (game.venue_address ? `, ${game.venue_address}` : "");
   const mapa = game.court_maps || game.venue_maps;
+  const JUEGAN = T("Juegan", "Players");
   const base: [string, string][] = [
-    ["Deporte", game.sport_name],
-    ["Cuándo", cuando],
-    ["Lugar", lugar],
+    [T("Deporte", "Sport"), sport],
+    [T("Cuándo", "When"), cuando],
+    [T("Lugar", "Venue"), lugar],
   ];
   const cancelBlock: Block = {
     panel: {
-      title: "¿Cambio de planes?",
-      text: "Si no puedes jugar, libera tu cupo hasta 1 hora antes del inicio para que otro jugador pueda tomarlo.",
+      title: T("¿Cambio de planes?", "Change of plans?"),
+      text: T(
+        "Si no puedes jugar, libera tu cupo hasta 1 hora antes del inicio para que otro jugador pueda tomarlo.",
+        "If you can't play, free up your spot up to 1 hour before the start so someone else can take it.",
+      ),
       buttons: [
-        { label: "Cancelar mi cupo", url: cancelUrl(site, player.cancel_token), kind: "peligro" },
-        { label: "Ver mis partidos", url: mineUrl(site), kind: "contorno" },
+        { label: T("Cancelar mi cupo", "Cancel my spot"), url: cancelUrl(site, player.cancel_token), kind: "peligro" },
+        { label: T("Ver mis partidos", "See my matches"), url: mineUrl(site), kind: "contorno" },
       ],
-      note: "«Mis partidos» muestra tus partidos en el navegador donde agendaste.",
+      note: T(
+        "«Mis partidos» muestra tus partidos en el navegador donde agendaste.",
+        "“My matches” shows your matches in the browser where you booked them.",
+      ),
     },
   };
-  const footer: Block = { small: "Recibes este correo porque te anotaste en un partido en Peloteo. No respondas a este mensaje." };
+  const footer: Block = {
+    small: T(
+      "Recibes este correo porque te anotaste en un partido en Peloteo. No respondas a este mensaje.",
+      "You're receiving this email because you signed up for a match on Peloteo. Please don't reply to this message.",
+    ),
+  };
 
   let subject: string;
   let title: string;
@@ -168,54 +194,77 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
 
   switch (event) {
     case "partido_publicado":
-      subject = `Tu partido de ${game.sport_name} está publicado`;
-      title = "Partido publicado";
+      subject = T(`Tu partido de ${sport} está publicado`, `Your ${sport} match is posted`);
+      title = T("Partido publicado", "Match posted");
       blocks = [
         {
           p: coord
-            ? "Publicamos tu partido. Cuando se complete, te avisamos y te pasamos el contacto de tus compañeros para que reserven la cancha con el club."
-            : "Publicamos tu partido. Cuando se complete, le asignamos la primera cancha libre de ese turno y te avisamos.",
+            ? T(
+                "Publicamos tu partido. Cuando se complete, te avisamos y te pasamos el contacto de tus compañeros para que reserven la cancha con el club.",
+                "Your match is posted. When it fills up, we'll let you know and share your partners' contact details so you can book the court with the club.",
+              )
+            : T(
+                "Publicamos tu partido. Cuando se complete, le asignamos la primera cancha libre de ese turno y te avisamos.",
+                "Your match is posted. When it fills up, we'll assign the first free court at that time and let you know.",
+              ),
         },
-        { kv: [...base, ["Busca", `${faltan(missing)}, ${nivelesTexto(parseIntList(game.accepted_levels, 1, 5))}`]] },
+        { kv: [...base, [T("Busca", "Looking for"), `${falta(missing)}, ${nivelesTexto(parseIntList(game.accepted_levels, 1, 5), lang)}`]] },
         cancelBlock,
       ];
       break;
 
     case "jugador_se_sumo": {
       const nuevo = game.players[game.players.length - 1];
-      subject = `Se sumó un jugador a tu partido de ${game.sport_name}`;
-      title = "Se sumó un jugador";
+      subject = T(`Se sumó un jugador a tu partido de ${sport}`, `A player joined your ${sport} match`);
+      title = T("Se sumó un jugador", "A player joined");
       blocks = [
-        { p: `${nuevo ? `${nuevo.initials} (nivel ${nuevo.level})` : "Un jugador"} se sumó a tu partido. Todavía ${faltan(missing)}.` },
-        { kv: [...base, ["Juegan", quienes(game.players)]] },
+        {
+          p: en
+            ? `${nuevo ? nivel(nuevo) : "A player"} joined your match. Still ${falta(missing)}.`
+            : `${nuevo ? nivel(nuevo) : "Un jugador"} se sumó a tu partido. Todavía ${falta(missing)}.`,
+        },
+        { kv: [...base, [JUEGAN, quienes(game.players)]] },
         cancelBlock,
       ];
       break;
     }
 
     case "partido_confirmado": {
-      subject = `Partido confirmado: ${game.sport_name}, ${cuando}`;
-      title = "¡Partido confirmado!";
+      subject = T(`Partido confirmado: ${sport}, ${cuando}`, `Match confirmed: ${sport}, ${cuando}`);
+      title = T("¡Partido confirmado!", "Match confirmed!");
       const cancha =
         (game.court_name ?? "") +
         (game.court_surface ? `, ${game.court_surface.toLowerCase()}` : "") +
         (game.court_notes ? `. ${game.court_notes}` : "");
-      const saludo = `Hola, soy ${player.initials}. Jugamos ${game.sport_name} por Peloteo el ${cuando} en ${game.venue_name}.`;
+      // El saludo de WhatsApp va en el idioma de quien lo envía.
+      const saludo = T(
+        `Hola, soy ${player.initials}. Jugamos ${sport} por Peloteo el ${cuando} en ${game.venue_name}.`,
+        `Hi, I'm ${player.initials}. We're playing ${sport} through Peloteo on ${cuando} at ${game.venue_name}.`,
+      );
       blocks = [
         {
           p: game.court_name
-            ? "Ya tienen cancha asignada. Estos son los datos del partido."
-            : "¡Ya están todos! Pónganse de acuerdo y reserven la cancha directamente con el club.",
+            ? T("Ya tienen cancha asignada. Estos son los datos del partido.", "You have a court assigned. Here are the match details.")
+            : T(
+                "¡Ya están todos! Pónganse de acuerdo y reserven la cancha directamente con el club.",
+                "Everyone's in! Get in touch with each other and book the court directly with the club.",
+              ),
         },
-        { kv: [...base, ...(game.court_name ? [["Cancha", cancha] as [string, string]] : []), ["Juegan", quienes(game.players)]] },
-        ...(mapa ? [{ button: ["Cómo llegar", mapa] as [string, string] }] : []),
-        { h: "Contacto de tus compañeros" },
+        {
+          kv: [
+            ...base,
+            ...(game.court_name ? [[T("Cancha", "Court"), cancha] as [string, string]] : []),
+            [JUEGAN, quienes(game.players)],
+          ],
+        },
+        ...(mapa ? [{ button: [T("Cómo llegar", "Directions"), mapa] as [string, string] }] : []),
+        { h: T("Contacto de tus compañeros", "Your partners' contact details") },
         {
           list: others.map((p) => ({
-            text: `${p.initials} (nivel ${p.level}): ${p.email}${p.whatsapp ? `, WhatsApp ${p.whatsapp}` : ""}`,
+            text: `${nivel(p)}: ${p.email}${p.whatsapp ? `, WhatsApp ${p.whatsapp}` : ""}`,
             links: [
-              ["Escribir correo", `mailto:${p.email}`] as [string, string],
-              ...(p.whatsapp ? [["Escribir por WhatsApp", waLink(p.whatsapp, saludo)] as [string, string]] : []),
+              [T("Escribir correo", "Send an email"), `mailto:${p.email}`] as [string, string],
+              ...(p.whatsapp ? [[T("Escribir por WhatsApp", "Message on WhatsApp"), waLink(p.whatsapp, saludo)] as [string, string]] : []),
             ],
           })),
         },
@@ -225,62 +274,80 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
     }
 
     case "partido_sin_cancha": {
-      subject = `Tu partido de ${game.sport_name} se completó, pero no quedan canchas`;
-      title = "Partido completo, sin cancha";
+      subject = T(`Tu partido de ${sport} se completó, pero no quedan canchas`, `Your ${sport} match filled up, but there are no courts left`);
+      title = T("Partido completo, sin cancha", "Match full, no court");
       const sug = game.suggestions ?? [];
       blocks = [
         {
-          p: `El partido del ${cuando} se completó, pero ya no queda ninguna cancha libre a esa hora, así que no pudimos confirmarlo.`,
+          p: T(
+            `El partido del ${cuando} se completó, pero ya no queda ninguna cancha libre a esa hora, así que no pudimos confirmarlo.`,
+            `The match on ${cuando} filled up, but there are no free courts left at that time, so we couldn't confirm it.`,
+          ),
         },
-        { kv: [...base, ["Juegan", quienes(game.players)]] },
+        { kv: [...base, [JUEGAN, quienes(game.players)]] },
         ...(sug.length
           ? ([
-              { h: "Turnos con cancha libre" },
-              { list: sug.map((s: SuggestedSlot) => ({ text: `${fechaLarga(s.date)} a las ${s.time}` })) },
+              { h: T("Turnos con cancha libre", "Times with a free court") },
+              { list: sug.map((s: SuggestedSlot) => ({ text: en ? `${fecha(s.date)} at ${s.time}` : `${fecha(s.date)} a las ${s.time}` })) },
               {
-                p: "Pónganse de acuerdo: uno de ustedes abre el partido en otro turno y los demás se suman. Después, cada uno cancela su cupo en este.",
+                p: T(
+                  "Pónganse de acuerdo: uno de ustedes abre el partido en otro turno y los demás se suman. Después, cada uno cancela su cupo en este.",
+                  "Agree among yourselves: one of you opens the match at another time and the others join. Then each of you cancels your spot in this one.",
+                ),
               },
-              { button: ["Ver turnos en Peloteo", site + "/"] },
+              { button: [T("Ver turnos en Peloteo", "See times on Peloteo"), site + "/"] },
             ] as Block[])
-          : [{ p: "Por ahora no vemos otros turnos libres cercanos. Revisa el calendario en Peloteo." }, { button: ["Abrir Peloteo", site + "/"] } as Block]),
+          : [
+              { p: T("Por ahora no vemos otros turnos libres cercanos. Revisa el calendario en Peloteo.", "We don't see other free times nearby right now. Check the calendar on Peloteo.") },
+              { button: [T("Abrir Peloteo", "Open Peloteo"), site + "/"] } as Block,
+            ]),
         cancelBlock,
       ];
       break;
     }
 
     case "cupo_cancelado":
-      subject = `Un jugador dejó tu partido de ${game.sport_name}`;
-      title = "Se liberó un cupo";
+      subject = T(`Un jugador dejó tu partido de ${sport}`, `A player left your ${sport} match`);
+      title = T("Se liberó un cupo", "A spot opened up");
       blocks = [
         {
           p: coord
-            ? `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${faltan(missing)}. Si ya habían reservado la cancha con el club, revisen si la mantienen.`
-            : `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${faltan(missing)}. La cancha que tenía asignada quedó libre; cuando se complete, se asigna la primera cancha libre del turno.`,
+            ? T(
+                `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${falta(missing)}. Si ya habían reservado la cancha con el club, revisen si la mantienen.`,
+                `A player cancelled their spot, so the match is looking for players again: ${falta(missing)}. If you already booked the court with the club, check whether you'll keep it.`,
+              )
+            : T(
+                `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${falta(missing)}. La cancha que tenía asignada quedó libre; cuando se complete, se asigna la primera cancha libre del turno.`,
+                `A player cancelled their spot, so the match is looking for players again: ${falta(missing)}. Its court was released; when it fills up, the first free court at that time will be assigned.`,
+              ),
         },
-        { kv: [...base, ["Juegan", quienes(game.players)]] },
+        { kv: [...base, [JUEGAN, quienes(game.players)]] },
         cancelBlock,
       ];
       break;
 
     case "encuentro_cancelado":
-      subject = `Partido cancelado: ${game.sport_name}, ${cuando}`;
-      title = "Partido cancelado";
+      subject = T(`Partido cancelado: ${sport}, ${cuando}`, `Match cancelled: ${sport}, ${cuando}`);
+      title = T("Partido cancelado", "Match cancelled");
       blocks = [
         {
           p:
             game.cause === "bloqueo"
-              ? "Lo sentimos: la cancha no estará disponible en ese horario, así que el partido se canceló."
-              : "Lo sentimos: la administración del lugar canceló este partido.",
+              ? T(
+                  "Lo sentimos: la cancha no estará disponible en ese horario, así que el partido se canceló.",
+                  "Sorry: the court won't be available at that time, so the match was cancelled.",
+                )
+              : T("Lo sentimos: la administración del lugar canceló este partido.", "Sorry: the venue's management cancelled this match."),
         },
         { kv: base },
-        { p: "Puedes agendar otro turno cuando quieras." },
-        { button: ["Agendar otro partido", site + "/"] },
+        { p: T("Puedes agendar otro turno cuando quieras.", "You can book another time whenever you like.") },
+        { button: [T("Agendar otro partido", "Book another match"), site + "/"] },
       ];
       break;
   }
 
   blocks.push(footer);
-  return { subject, text: `${title}\n\n${toText(blocks)}`, html: toHtml(title, blocks) };
+  return { subject, text: `${title}\n\n${toText(blocks)}`, html: toHtml(title, blocks, lang) };
 }
 
 /** Correo con el enlace de ingreso a la cuenta (cuentas: preparadas, desactivadas). */

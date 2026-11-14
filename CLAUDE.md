@@ -16,7 +16,7 @@ El archivo `referencia/peloteo.html` es el prototipo aprobado. Úsalo como guía
 - Cloudflare D1 (SQLite) como base de datos, con migraciones en `migrations/`.
 - Frontend sin framework: HTML, CSS y JavaScript servidos como archivos estáticos por el mismo Worker.
 - Sin dependencias que no sean necesarias. Antes de configurar `wrangler`, revisa la documentación vigente de Cloudflare: no asumas sintaxis de memoria.
-- Idioma de la interfaz: español de Chile. Zona horaria: `America/Santiago`.
+- Idioma de la interfaz: español de Chile, con versión en inglés para el sitio público (ver Interfaz › Idiomas). El panel de configuración sigue solo en español. Zona horaria: `America/Santiago`.
 
 ## Estructura sugerida
 
@@ -37,7 +37,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; tenis y pádel `"2,4"`: singles o dobles, migración `0008`), `visible` (1/0, migración `0010`: si se ofrece a los jugadores; por defecto sí), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
 
-**categories**: `sport_id`, `level` (1 a 5), `label`. Máximo 5 por deporte. El nivel 1 es avanzado y el 5 principiante. El texto es libre y puede ser amable o gracioso, por ejemplo "Estoy entrenando para Wimbledon" o "Apenas logro pasar la pelota".
+**categories**: `sport_id`, `level` (1 a 5), `label`, `label_en` (texto opcional en inglés, migración `0011`; si falta, se muestra `label`). Máximo 5 por deporte. El nivel 1 es avanzado y el 5 principiante. El texto es libre y puede ser amable o gracioso, por ejemplo "Estoy entrenando para Wimbledon" o "Apenas logro pasar la pelota".
 
 **courts** (canchas): `id`, `sport_id`, `venue_id`, `name`, `surface` (arcilla, carpeta sintética, etc.), `status` (`operativa`, `mantencion`, `cerrada`), `notes`, `maps_url`, `lat`, `lng`, `open_time`, `close_time`, `slot_minutes` (60, 90 o 120), `days` (días de la semana en que opera, texto con números separados por coma donde 0 = domingo y 6 = sábado, por ejemplo `"1,2,3,4,5"`), `available_from`, `available_to` (opcionales). Cada cancha pertenece a un solo deporte; por ahora no se contemplan canchas compartidas entre deportes.
 
@@ -46,7 +46,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Restricción única sobre (`court_id`, `date`, `time`) solo para encuentros `confirmado`: es la defensa contra la doble reserva.
 - El estado `cancelado` lo asigna solo el administrador (ver Administrador).
 
-**players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
+**players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `lang` (`es` o `en`, idioma de sus correos; migración `0011`), `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
 
 **admins**: `id`, `username`, `password_hash`, `password_salt`, `totp_secret` (nulo), `totp_enabled` (falso), `totp_last_step` (último paso TOTP aceptado, migración `0005`), `must_change_password`.
 
@@ -182,6 +182,13 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
   - Al tocar un bloque se abre la lista de sus partidos (hora, deporte y lugar, niveles, cupos, quiénes juegan) con "Unirme" (va al formulario; el servidor valida el nivel) y, debajo, la opción de crear un partido: se elige el deporte y el calendario abre en ese día. Desde AM se ofrece el día completo (mañana y tarde); desde PM, solo la tarde ("Ver todo el día" quita ese filtro). Si el día es hoy, solo se ofrecen horas que aún no comienzan.
   - **Guía de bienvenida (2026-11-14):** ventana (`<dialog>`) de 4 pasos que explica para qué sirve: encontrar con quién jugar, elegir día y hora, ponerse de acuerdo (contacto compartido; en coordinación, reservar con el club) y "¡Listo, a jugar!". Cada paso con una ilustración SVG propia sobre verde cancha. Aparece al entrar al inicio (no con el enlace de cancelar) hasta que se marca "No volver a mostrar esta guía" en el último paso, que se guarda en la cookie `peloteo_intro=1` (400 días, la escribe el navegador). Si se cierra sin marcarla, vuelve en la próxima visita, no en la misma (`sessionStorage`). El botón "¿Cómo funciona?" del héroe la abre de nuevo.
   - "Configuración" está en la barra superior (ícono de engranaje; el texto se oculta hasta 640 px), ya no al pie de la página.
+- **Idiomas (2026-11-14):** español e inglés en todo el sitio público.
+  - Selector en la barra superior, al lado de Buscar: bandera de España con "ESP" y del Reino Unido (Union Jack) con "ENG" (SVG propios en `public/app.js`). Hasta 600 px la barra queda solo con íconos y el código va bajo la bandera; hasta 800 px "Buscar" y "Configuración" van solo con su ícono.
+  - El idioma elegido se guarda en la cookie `peloteo_lang` (`es`/`en`, 400 días, la escribe el navegador). Sin elección: inglés si el navegador está en inglés; si no, español.
+  - Textos de la interfaz con `L('español', 'English')` en `public/app.js` (incluida la guía de bienvenida). Fechas en inglés: "Monday, November 16".
+  - El servidor traduce los mensajes de error de `/api` según la cookie (`src/lib/i18n.ts`: `ERRORS_EN` y patrones). Toda frase de error nueva debe agregarse ahí; una prueba lo exige.
+  - Nombres de deportes conocidos en inglés (`SPORTS_EN` en `src/lib/i18n.ts`, que llega en `GET /api/today` como `sport_names_en`); los lugares no se traducen. Las categorías usan `label_en` (se edita en el formulario del deporte del admin).
+  - Correos: cada cupo guarda el idioma de quien se anotó (`player.lang` al abrir o unirse) y cada jugador recibe sus avisos en ese idioma, aunque sus compañeros usen el otro. El correo de ingreso a cuentas (desactivadas) sigue solo en español.
 - Flujo público: deporte, lugar, calendario (solo días entre hoy y hoy + 15; si el rango cruza al mes siguiente, se puede avanzar a ese mes), horas del día, formulario, confirmación.
 - El calendario marca los días con encuentros que buscan jugadores.
 - El selector de nivel muestra el número y el texto de la categoría.
@@ -226,7 +233,7 @@ npm run check        # genera tipos (wrangler types) y revisa con tsc
 - Las pruebas usan el runner de Node (`node --test`) y SQLite incorporado (`node:sqlite`), sin dependencias extra. `test/helpers/db.ts` imita la API de D1 (incluido `batch` transaccional) y aplica las migraciones reales.
 - Los imports entre archivos TypeScript llevan extensión `.ts` para que Node los ejecute directamente. `tsc` revisa `src/`; las pruebas no se revisan con `tsc` (no hay tipos de Node instalados).
 
-- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0010`.
+- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0011`.
 - La base local se identifica por el `database_id`: si cambia, queda una base local vacía y hay que volver a `npm run db:migrate`.
 - Despliegue: automático con Workers Builds en cada push a `main` (aparece como check "Workers Builds: peloteo" en GitHub). Hacer push equivale a desplegar en producción. Despliegue manual: `npx wrangler deploy`. Dirección pública: https://peloteo.cl (también responde https://peloteo.peloteo.workers.dev).
 - Las migraciones no se aplican solas: aplicar las nuevas a la base remota antes del push que trae el código que las necesita.
@@ -288,4 +295,5 @@ Decididas (2026-11-12):
 - Cuentas de jugadores (2026-11-14): opcionales, ingreso por enlace al correo, los partidos previos pasan a la cuenta. Preparadas (migración `0006`, lógica, rutas y pruebas) pero desactivadas hasta construir su interfaz.
 - Deportes (2026-11-14): al inicio solo tenis; siempre se eligen en un menú desplegable.
 - Canchas (2026-11-14): modo coordinación; solo se muestran deporte, lugar y hora; las horas salen del horario del club; a una misma hora, como máximo tantos confirmados como canchas; al completarse se confirma sin cancha y los jugadores la reservan con el club (migración `0007`). La lógica de reserva queda lista para cuando haya conexión con el club.
+- Idiomas (2026-11-14): sitio público en español e inglés, con selector ESP/ENG en la barra; correos en el idioma de cada jugador; categorías con texto opcional en inglés (migración `0011`). El admin sigue en español.
 - WhatsApp (2026-11-14): el campo del número se activa solo desde Configuración › Opciones (apagado por defecto, migración `0009`); el aviso por WhatsApp sigue oculto hasta implementar la etapa 6 (`WHATSAPP_NOTICES` en `public/app.js`).

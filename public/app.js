@@ -25,19 +25,46 @@
   // libres y la cancha asignada.
   const coord = () => !S.today || S.today.court_mode !== 'reserva';
 
+  // Idioma de la interfaz: español (por defecto) o inglés. Se elige con ESP/ENG en
+  // la barra superior y se guarda en la cookie peloteo_lang (400 días), que el
+  // servidor usa para los mensajes de error. Sin elección: el idioma del navegador
+  // si es inglés; si no, español. L('texto', 'text') elige según el idioma.
+  const LANG_COOKIE = 'peloteo_lang';
+  const cookieLang = () => { const m = /(?:^|;\s*)peloteo_lang=(es|en)(?:;|$)/.exec(document.cookie); return m ? m[1] : null; };
+  const browserLang = () => { const l = ((navigator.languages && navigator.languages[0]) || navigator.language || '').toLowerCase(); return l.startsWith('en') ? 'en' : 'es'; };
+  let lang = cookieLang() || browserLang();
+  const L = (es, en) => (lang === 'en' ? en : es);
+  function saveLang() {
+    document.cookie = LANG_COOKIE + '=' + lang + '; Max-Age=34560000; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+    document.documentElement.lang = lang === 'en' ? 'en' : 'es-CL';
+    document.title = L('Peloteo, agenda de partidos', 'Peloteo, book a match');
+  }
+
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-  const DOW = ['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'];
+  const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const MESES_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const DIAS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const DIAS_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MESES = () => L(MESES_ES, MESES_EN);
+  const DIAS = () => L(DIAS_ES, DIAS_EN);
+  const DOW = () => L(['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'], ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']);
   const pad = (n) => String(n).padStart(2, '0');
   const parse = (s) => { const a = s.split('-').map(Number); return new Date(a[0], a[1] - 1, a[2], 12); };
-  const fecha = (s) => { const d = parse(s); return DIAS[d.getDay()] + ' ' + d.getDate() + ' de ' + MESES[d.getMonth()]; };
+  // "lunes 16 de noviembre" / "Monday, November 16"
+  const fecha = (s) => { const d = parse(s); return lang === 'en' ? DIAS_EN[d.getDay()] + ', ' + MESES_EN[d.getMonth()] + ' ' + d.getDate() : DIAS_ES[d.getDay()] + ' ' + d.getDate() + ' de ' + MESES_ES[d.getMonth()]; };
+  // "lunes 16 de noviembre, 18:00" / "Monday, November 16 at 18:00"
+  const fechaHora = (s, t) => cap(fecha(s)) + L(', ', ' at ') + t;
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const plural = (n, uno, varios) => (n === 1 ? '1 ' + uno : n + ' ' + varios);
-  const faltan = (n) => (n === 1 ? 'falta 1 jugador' : 'faltan ' + n + ' jugadores');
-  const levelsText = (ls) => (ls.length === 1 ? 'nivel ' + ls[0] : ls.length === 5 ? 'todos los niveles' : 'niveles ' + ls.slice(0, -1).join(', ') + ' y ' + ls[ls.length - 1]);
-  const who = (players) => players.map((p) => esc(p.initials) + ' (nivel ' + p.level + ')').join(', ');
+  const faltan = (n) => (lang === 'en' ? (n === 1 ? '1 player needed' : n + ' players needed') : n === 1 ? 'falta 1 jugador' : 'faltan ' + n + ' jugadores');
+  const levelsText = (ls) => (ls.length === 1 ? L('nivel ', 'level ') + ls[0] : ls.length === 5 ? L('todos los niveles', 'all levels') : L('niveles ', 'levels ') + ls.slice(0, -1).join(', ') + L(' y ', ' and ') + ls[ls.length - 1]);
+  const who = (players) => players.map((p) => esc(p.initials) + ' (' + L('nivel ', 'level ') + p.level + ')').join(', ');
+  // Nombres de deportes en inglés (los entrega /api/today); los lugares no se traducen.
+  const sportKeyOf = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const sportLabel = (name) => (lang === 'en' && S.today && S.today.sport_names_en && S.today.sport_names_en[sportKeyOf(name)]) || name;
+  // Texto de una categoría: en inglés si el administrador lo definió; si no, el de español.
+  const catLabel = (c) => (lang === 'en' && c.label_en) || c.label;
 
   // Preferencias de este navegador (solo comodidad: se pueden perder sin problema).
   const LS = {
@@ -81,7 +108,7 @@
       try { data = await res.json(); } catch (e) { data = null; }
       return { ok: res.ok, status: res.status, data: data || {} };
     } catch (e) {
-      return { ok: false, status: 0, data: { error: 'No hay conexión. Revisa tu internet e inténtalo de nuevo.' } };
+      return { ok: false, status: 0, data: { error: L('No hay conexión. Revisa tu internet e inténtalo de nuevo.', "You're offline. Check your connection and try again.") } };
     }
   }
   const get = async (path) => { const r = await api('GET', path); return r.ok ? r.data : null; };
@@ -132,7 +159,7 @@
 
   // ---------------- vistas ----------------
   const errBox = () => (S.err ? '<p class="err" role="alert">' + esc(S.err) + '</p>' : '');
-  const sportName = () => (S.offer ? S.offer.sport.name : '');
+  const sportName = () => (S.offer ? sportLabel(S.offer.sport.name) : '');
 
   function crumbs(upTo) {
     const parts = [];
@@ -148,29 +175,42 @@
     tenis: '<circle cx="12" cy="12" r="8.5"/><path d="M5.5 6.5c3.5 2.8 3.5 8.2 0 11M18.5 6.5c-3.5 2.8-3.5 8.2 0 11"/>',
     pelota: '<circle cx="12" cy="12" r="8.5"/><path d="M4 10.5c5 1.5 11 1.5 16 0"/>',
     buscar: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    mis: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M8.75 15.25l2.25 2.25 4.25-4.25"/>',
     seguir: '<path d="M9 5l7 7-7 7"/>',
     ajustes: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   };
-  const HALF = { am: 'mañana', pm: 'tarde' };
+  const HALF = (h) => (h === 'am' ? L('mañana', 'morning') : L('tarde', 'afternoon'));
   const halfOf = (time) => (time < '12:00' ? 'am' : 'pm');
   let todayLoadedAt = Date.now();
   const nowHHMM = () => {
     const m = Math.min(24 * 60 - 1, S.today.minutes + Math.floor((Date.now() - todayLoadedAt) / 60000));
     return pad(Math.floor(m / 60)) + ':' + pad(m % 60);
   };
-  const diaCorto = (s) => { const d = parse(s); return DIAS[d.getDay()].slice(0, 2); };
+  const diaCorto = (s) => { const d = parse(s); return DIAS()[d.getDay()].slice(0, lang === 'en' ? 3 : 2); };
   const icon = (name, size) => '<svg width="' + (size || 24) + '" height="' + (size || 24) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[name] + '</svg>';
+  // Banderas del selector de idioma: España (ESP) y Reino Unido (ENG), en SVG para
+  // que se vean igual en todos los sistemas (Windows no dibuja banderas emoji).
+  const FLAGS = {
+    es: '<svg class="flag" viewBox="0 0 30 20" aria-hidden="true" focusable="false"><rect width="30" height="20" fill="#AA151B"/><rect y="5" width="30" height="10" fill="#F1BF00"/></svg>',
+    // Union Jack (2:1), recortado al centro en 3:2 para que mida lo mismo que la de España.
+    en: '<svg class="flag" viewBox="7.5 0 45 30" aria-hidden="true" focusable="false"><clipPath id="flag-uk-t"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath>' +
+      '<rect width="60" height="30" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#FFFFFF" stroke-width="6"/>' +
+      '<path d="M0 0l60 30m0-30L0 30" clip-path="url(#flag-uk-t)" stroke="#C8102E" stroke-width="4"/>' +
+      '<path d="M30 0v30M0 15h60" stroke="#FFFFFF" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></svg>',
+  };
   const sportIcon = (key) => icon(/padel/.test(key) ? 'padel' : /tenis/.test(key) ? 'tenis' : 'pelota', 26);
   function vHome() {
     // La foto de fondo (public/img/inicio-tenis.webp) es decorativa: va en CSS, no como <img>.
-    let h = '<section class="hero photo"><div class="shade"></div><h1>¿Jugamos?</h1><p>' + (coord() ? 'Elige deporte, lugar y hora, y encuentra con quién jugar.' : 'Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.') + '</p>' +
-      '<button type="button" class="how" data-a="intro">¿Cómo funciona?</button></section>';
+    let h = '<section class="hero photo"><div class="shade"></div><h1 class="' + lang + '">' + L('¿Jugamos?', "Let's play?") + '</h1><p>' +
+      (coord() ? L('Elige deporte, lugar y hora, y encuentra con quién jugar.', 'Pick a sport, place and time, and find someone to play with.')
+        : L('Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.', "Pick a sport, place and time. If someone at your level is looking for a match, we'll assign you a court.")) + '</p>' +
+      '<button type="button" class="how" data-a="intro">' + L('¿Cómo funciona?', 'How does it work?') + '</button></section>';
     if (!S.sports.length) {
-      return h + '<div class="card"><h2>Todavía no hay deportes disponibles</h2><p class="muted">Pronto aparecerán aquí las canchas para agendar.</p></div>';
+      return h + '<div class="card"><h2>' + L('Todavía no hay deportes disponibles', 'No sports available yet') + '</h2><p class="muted">' + L('Pronto aparecerán aquí las canchas para agendar.', 'Courts to book will show up here soon.') + '</p></div>';
     }
     h += vWeek();
-    h += '<section class="card create" aria-labelledby="crea"><h2 id="crea">Crea un partido</h2>' +
-      sportPicker('create', 'Elige el deporte; después, el lugar, el día y la hora.', 'Ver días y horas') + '</section>';
+    h += '<section class="card create" aria-labelledby="crea"><h2 id="crea">' + L('Crea un partido', 'Create a match') + '</h2>' +
+      sportPicker('create', L('Elige el deporte; después, el lugar, el día y la hora.', 'Pick the sport; then the place, day and time.'), L('Ver días y horas', 'See days and times')) + '</section>';
     return h;
   }
 
@@ -180,9 +220,9 @@
     // Por defecto: el último elegido en este navegador; si no, tenis (el deporte principal); si no, el primero.
     const has = (k) => S.sports.some((n) => n.key === k);
     const last = prefs.sport && has(prefs.sport) ? prefs.sport : has('tenis') ? 'tenis' : (S.sports[0] && S.sports[0].key);
-    return '<form data-f="' + form + '" class="picker" novalidate><label class="f" for="sp-' + form + '">Deporte</label>' +
+    return '<form data-f="' + form + '" class="picker" novalidate><label class="f" for="sp-' + form + '">' + L('Deporte', 'Sport') + '</label>' +
       '<select id="sp-' + form + '" name="sport">' + S.sports.map((n) =>
-        '<option value="' + esc(n.key) + '"' + (n.key === last ? ' selected' : '') + '>' + esc(n.name) + (coord() ? '' : ' · ' + plural(n.venues, 'lugar', 'lugares') + ', ' + plural(n.courts, 'cancha', 'canchas')) + '</option>').join('') + '</select>' +
+        '<option value="' + esc(n.key) + '"' + (n.key === last ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + (coord() ? '' : ' · ' + plural(n.venues, L('lugar', 'place'), L('lugares', 'places')) + ', ' + plural(n.courts, L('cancha', 'court'), L('canchas', 'courts'))) + '</option>').join('') + '</select>' +
       (hint ? '<p class="small muted">' + hint + '</p>' : '') +
       '<div class="actions"><button class="btn block" type="submit">' + button + '</button></div></form>';
   }
@@ -193,15 +233,15 @@
     const days = S.open || [];
     const cell = (d, half) => {
       const n = d[half];
-      const label = cap(fecha(d.date)) + ', ' + HALF[half] + ': ' + (n ? (n === 1 ? '1 partido busca jugadores' : n + ' partidos buscan jugadores') : 'nadie busca jugadores todavía');
+      const label = cap(fecha(d.date)) + ', ' + HALF(half) + ': ' + (n ? (n === 1 ? L('1 partido busca jugadores', '1 match looking for players') : n + L(' partidos buscan jugadores', ' matches looking for players')) : L('nadie busca jugadores todavía', 'nobody is looking for players yet'));
       return '<button type="button" class="blk ' + half + (n ? ' on' : '') + '" data-a="block" data-d="' + d.date + '" data-h="' + half + '" aria-label="' + label + '">' + half.toUpperCase() + '</button>';
     };
-    return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">¿Buscas con quién jugar?</h2>' +
-      '<p>Toca un bloque: <b class="dot"></b> naranjo si hay jugadores esperando.</p>' +
+    return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">' + L('¿Buscas con quién jugar?', 'Looking for someone to play with?') + '</h2>' +
+      '<p>' + L('Toca un bloque: <b class="dot"></b> naranjo si hay jugadores esperando.', 'Tap a block: <b class="dot"></b> orange if players are waiting.') + '</p>' +
       (days.length ? '<div class="days8">' + days.map((d) => {
         const t = parse(d.date);
-        return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? 'hoy' : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span><span class="pair">' + cell(d, 'am') + cell(d, 'pm') + '</span></div>';
-      }).join('') + '</div>' : '<p class="small">Cargando…</p>') +
+        return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? L('hoy', 'today') : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span><span class="pair">' + cell(d, 'am') + cell(d, 'pm') + '</span></div>';
+      }).join('') + '</div>' : '<p class="small">' + L('Cargando…', 'Loading…') + '</p>') +
       '</section>';
   }
 
@@ -209,32 +249,33 @@
   function vBlock() {
     const b = S.block;
     if (!b) return '';
-    let h = '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ Inicio</button></p>' +
-      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF[b.half] + '</h1>';
-    if (!S.blockGames) return h + '<p class="muted">Cargando…</p>';
+    let h = '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ ' + L('Inicio', 'Home') + '</button></p>' +
+      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF(b.half) + '</h1>';
+    if (!S.blockGames) return h + '<p class="muted">' + L('Cargando…', 'Loading…') + '</p>';
     if (!S.blockGames.length) {
-      h += '<p class="muted">Nadie busca jugadores ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + ' de ese día. Abre tú un partido y otros podrán sumarse.</p>';
+      h += '<p class="muted">' + L('Nadie busca jugadores ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + ' de ese día. Abre tú un partido y otros podrán sumarse.',
+        'Nobody is looking for players that ' + (b.half === 'am' ? 'morning' : 'afternoon') + '. Open a match yourself and others can join.') + '</p>';
     } else {
-      h += '<p class="muted">' + (S.blockGames.length === 1 ? '1 partido busca jugadores.' : S.blockGames.length + ' partidos buscan jugadores.') + ' Toca uno para sumarte.</p>' +
+      h += '<p class="muted">' + (S.blockGames.length === 1 ? L('1 partido busca jugadores.', '1 match is looking for players.') : S.blockGames.length + L(' partidos buscan jugadores.', ' matches are looking for players.')) + L(' Toca uno para sumarte.', ' Tap one to join.') + '</p>' +
         '<ul class="list open-list">' + S.blockGames.map((g) =>
-          '<li><button type="button" class="row open" data-a="pickOpen" data-id="' + esc(g.id) + '"><time>' + g.time + '</time><span class="txt"><span class="name">' + esc(g.sport.name) + ' · ' + esc(g.venue.name) + '</span>' +
-          '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">Juegan ' + who(g.players) + '</span></span><span class="go">Unirme</span></button></li>').join('') + '</ul>';
+          '<li><button type="button" class="row open" data-a="pickOpen" data-id="' + esc(g.id) + '"><time>' + g.time + '</time><span class="txt"><span class="name">' + esc(sportLabel(g.sport.name)) + ' · ' + esc(g.venue.name) + '</span>' +
+          '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">' + L('Juegan ', 'Playing: ') + who(g.players) + '</span></span><span class="go">' + L('Unirme', 'Join') + '</span></button></li>').join('') + '</ul>';
     }
-    h += '<h2 class="label">' + (b.half === 'am' ? 'Crear un partido ese día' : 'Crear un partido en la tarde') + '</h2>' +
-      (S.sports.length ? '<div class="card create">' + sportPicker('createIn', b.half === 'am' ? 'Te mostramos las horas libres de ese día, mañana y tarde.' : 'Te mostramos las horas libres de esa tarde.', 'Ver horas libres') + '</div>'
-        : '<p class="muted">Todavía no hay deportes disponibles.</p>');
+    h += '<h2 class="label">' + (b.half === 'am' ? L('Crear un partido ese día', 'Create a match that day') : L('Crear un partido en la tarde', 'Create a match that afternoon')) + '</h2>' +
+      (S.sports.length ? '<div class="card create">' + sportPicker('createIn', b.half === 'am' ? L('Te mostramos las horas libres de ese día, mañana y tarde.', "We'll show you that day's free times, morning and afternoon.") : L('Te mostramos las horas libres de esa tarde.', "We'll show you that afternoon's free times."), L('Ver horas libres', 'See free times')) + '</div>'
+        : '<p class="muted">' + L('Todavía no hay deportes disponibles.', 'No sports available yet.') + '</p>');
     return h;
   }
 
   async function loadOpen() { S.open = (await get('/api/open')) || []; }
 
   function vVenue() {
-    if (!S.offers.length) return '<p>Ese deporte ya no está disponible.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Volver al inicio</button></div>';
-    return '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ Deportes</button></p><h1 class="h">¿Dónde quieres jugar?</h1><ul class="list">' + S.offers.map((o, i) =>
+    if (!S.offers.length) return '<p>' + L('Ese deporte ya no está disponible.', 'That sport is no longer available.') + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Volver al inicio', 'Back to home') + '</button></div>';
+    return '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ ' + L('Deportes', 'Sports') + '</button></p><h1 class="h">' + L('¿Dónde quieres jugar?', 'Where do you want to play?') + '</h1><ul class="list">' + S.offers.map((o, i) =>
       '<li><button type="button" class="row" data-a="offer" data-i="' + i + '"><span><span class="name">' + esc(o.venue.name) + '</span><span class="meta">' +
-      esc(o.venue.address || '') + (coord() ? '' : (o.venue.address ? '. ' : '') + plural(o.courts, 'cancha operativa', 'canchas operativas')) +
-      (o.open_games ? '. ' + (o.open_games === 1 ? '1 partido busca jugadores' : o.open_games + ' partidos buscan jugadores') : '') +
-      '</span></span><span class="go">Elegir</span></button></li>').join('') + '</ul>';
+      esc(o.venue.address || '') + (coord() ? '' : (o.venue.address ? '. ' : '') + plural(o.courts, L('cancha operativa', 'court open'), L('canchas operativas', 'courts open'))) +
+      (o.open_games ? '. ' + (o.open_games === 1 ? L('1 partido busca jugadores', '1 match looking for players') : o.open_games + L(' partidos buscan jugadores', ' matches looking for players')) : '') +
+      '</span></span><span class="go">' + L('Elegir', 'Choose') + '</span></button></li>').join('') + '</ul>';
   }
 
   function vCalendar() {
@@ -244,7 +285,7 @@
     const t = parse(S.today.date), last = parse(S.today.last_bookable);
     const isFirstMonth = y === t.getFullYear() && m === t.getMonth();
     const isLastMonth = y === last.getFullYear() && m === last.getMonth();
-    let cells = DOW.map((d) => '<span class="dow" aria-hidden="true">' + d + '</span>').join('');
+    let cells = DOW().map((d) => '<span class="dow" aria-hidden="true">' + d + '</span>').join('');
     for (let i = 0; i < off; i++) cells += '<span></span>';
     for (let d = 1; d <= n; d++) {
       const ds = y + '-' + pad(m + 1) + '-' + pad(d);
@@ -252,14 +293,14 @@
       const usable = !!(di && (di.available || di.open_games));
       const has = !!(di && di.open_games);
       cells += '<button type="button" data-a="day" data-d="' + ds + '" class="' + (ds === S.today.date ? 'today ' : '') + (ds === S.date ? 'sel ' : '') + (has ? 'has' : '') + '"' +
-        (usable ? '' : ' disabled') + ' aria-label="' + fecha(ds) + (has ? ', hay partidos buscando jugadores' : '') + (usable ? '' : ', no disponible') + '"' +
+        (usable ? '' : ' disabled') + ' aria-label="' + fecha(ds) + (has ? L(', hay partidos buscando jugadores', ', matches looking for players') : '') + (usable ? '' : L(', no disponible', ', not available')) + '"' +
         (ds === S.date ? ' aria-pressed="true"' : '') + '>' + d + '</button>';
     }
-    let h = crumbs(2) + '<h1 class="h">Elige día y hora</h1>' +
-      '<div class="cal-head"><button type="button" data-a="month" data-n="-1" aria-label="Mes anterior"' + (isFirstMonth ? ' disabled' : '') + '>‹</button><strong>' + MESES[m] + ' ' + y + '</strong>' +
-      '<button type="button" data-a="month" data-n="1" aria-label="Mes siguiente"' + (isLastMonth ? ' disabled' : '') + '>›</button></div>' +
-      '<div class="cal">' + cells + '</div><p class="legend"><i></i> Hay alguien buscando partido ese día</p>' +
-      '<p class="small muted">Puedes agendar hasta el ' + fecha(S.today.last_bookable) + '.</p>';
+    let h = crumbs(2) + '<h1 class="h">' + L('Elige día y hora', 'Pick a day and time') + '</h1>' +
+      '<div class="cal-head"><button type="button" data-a="month" data-n="-1" aria-label="' + L('Mes anterior', 'Previous month') + '"' + (isFirstMonth ? ' disabled' : '') + '>‹</button><strong>' + MESES()[m] + ' ' + y + '</strong>' +
+      '<button type="button" data-a="month" data-n="1" aria-label="' + L('Mes siguiente', 'Next month') + '"' + (isLastMonth ? ' disabled' : '') + '>›</button></div>' +
+      '<div class="cal">' + cells + '</div><p class="legend"><i></i> ' + L('Hay alguien buscando partido ese día', 'Someone is looking for a match that day') + '</p>' +
+      '<p class="small muted">' + L('Puedes agendar hasta el ', 'You can book until ') + fecha(S.today.last_bookable) + '.</p>';
     if (S.date) {
       // Al crear desde un bloque del inicio: desde AM se ofrece el día completo y
       // desde PM solo la tarde. Si el día es hoy, solo horas que aún no comienzan.
@@ -267,96 +308,98 @@
       const half = fromBlock && S.preset.half === 'pm' ? 'pm' : null;
       const after = fromBlock && S.date === S.today.date ? nowHHMM() : null;
       const slots = S.slots.filter((s) => (!half || halfOf(s.time) === half) && (!after || s.time > after));
-      h += '<h2 id="dia">' + cap(fecha(S.date)) + (half ? ' · ' + HALF[half] : '') + '</h2>';
-      if (half) h += '<p class="small"><button type="button" class="linkbtn" data-a="allDay">Ver todo el día</button></p>';
+      h += '<h2 id="dia">' + cap(fecha(S.date)) + (half ? ' · ' + HALF(half) : '') + '</h2>';
+      if (half) h += '<p class="small"><button type="button" class="linkbtn" data-a="allDay">' + L('Ver todo el día', 'See the whole day') + '</button></p>';
       h += slots.length ? '<ul class="slots">' + slots.map((s) => {
         const o = [];
         s.open_games.forEach((g) => {
-          if (g.mine) o.push('<div class="opt mine"><span>Tu partido: ' + faltan(g.missing) + '</span></div>');
+          if (g.mine) o.push('<div class="opt mine"><span>' + L('Tu partido: ', 'Your match: ') + faltan(g.missing) + '</span></div>');
           else o.push('<button type="button" class="opt join" data-a="pickGame" data-id="' + esc(g.id) + '"><span>' + who(g.players) + ': ' + faltan(g.missing) +
-            '<br><small>Busca ' + levelsText(g.accepted_levels) + '</small></span><b>Unirme</b></button>');
+            '<br><small>' + L('Busca ', 'Looking for ') + levelsText(g.accepted_levels) + '</small></span><b>' + L('Unirme', 'Join') + '</b></button>');
         });
-        if (s.free_courts) o.push('<button type="button" class="opt" data-a="pickTime" data-t="' + s.time + '"><span>' + (coord() ? 'Hora disponible' : plural(s.free_courts, 'cancha libre', 'canchas libres')) + '</span><b>Abrir partido</b></button>');
-        if (!o.length) o.push('<div class="opt full">Completo</div>');
+        if (s.free_courts) o.push('<button type="button" class="opt" data-a="pickTime" data-t="' + s.time + '"><span>' + (coord() ? L('Hora disponible', 'Time available') : plural(s.free_courts, L('cancha libre', 'free court'), L('canchas libres', 'free courts'))) + '</span><b>' + L('Abrir partido', 'Open a match') + '</b></button>');
+        if (!o.length) o.push('<div class="opt full">' + L('Completo', 'Full') + '</div>');
         return '<li class="slot"><time>' + s.time + '</time><div class="opts">' + o.join('') + '</div></li>';
-      }).join('') + '</ul>' : '<p class="muted">No quedan horas disponibles ' + (half ? 'esa ' + HALF[half] + '.' : 'ese día.') + '</p>';
-    } else h += '<p class="muted" style="margin-top:1rem">Toca un día para ver las horas disponibles.</p>';
+      }).join('') + '</ul>' : '<p class="muted">' + L('No quedan horas disponibles ' + (half ? 'esa ' + HALF(half) + '.' : 'ese día.'), 'No times left ' + (half ? 'that ' + HALF(half) + '.' : 'that day.')) + '</p>';
+    } else h += '<p class="muted" style="margin-top:1rem">' + L('Toca un día para ver las horas disponibles.', 'Tap a day to see the available times.') + '</p>';
     return h;
   }
 
   function levelRadios(sport, allowed, selected) {
-    return '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Tu nivel de juego <small style="font-weight:400" class="muted">(1 avanzado, 5 principiante)</small></legend><div class="levels">' +
+    return '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('Tu nivel de juego', 'Your playing level') + ' <small style="font-weight:400" class="muted">' + L('(1 avanzado, 5 principiante)', '(1 advanced, 5 beginner)') + '</small></legend><div class="levels">' +
       sport.categories.map((c) => {
         const ok = !allowed || allowed.includes(c.level);
         return '<label class="lvl"' + (ok ? '' : ' style="opacity:.45"') + '><input type="radio" name="level" value="' + c.level + '"' + (selected === c.level && ok ? ' checked' : '') + (ok ? '' : ' disabled') +
-          '><span class="n">' + c.level + '</span><span>' + esc(c.label) + (ok ? '' : ' <small>(este partido no lo acepta)</small>') + '</span></label>';
+          '><span class="n">' + c.level + '</span><span>' + esc(catLabel(c)) + (ok ? '' : ' <small>' + L('(este partido no lo acepta)', "(this match doesn't accept it)") + '</small>') + '</span></label>';
       }).join('') + '</div></fieldset>';
   }
 
   function vForm() {
     const g = S.game, sport = S.offer && S.offer.sport, venue = S.offer && S.offer.venue;
-    if (!sport || !venue) return '<p>Ese partido ya no está disponible.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Volver al inicio</button></div>';
+    if (!sport || !venue) return '<p>' + L('Ese partido ya no está disponible.', 'That match is no longer available.') + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Volver al inicio', 'Back to home') + '</button></div>';
     const date = g ? g.date : S.date, time = g ? g.time : S.time;
     const key = 'lvl_' + sport.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const myLevel = prefs[key] || null;
     const sizes = sport.match_sizes;
-    let h = '<p class="crumbs"><button type="button" data-a="back">‹ Volver</button></p><h1 class="h">' + (g ? 'Unirme al partido' : 'Abrir partido') + '</h1>' +
-      '<div class="card"><dl class="kv"><dt>Deporte</dt><dd>' + esc(sport.name) + '</dd><dt>Lugar</dt><dd>' + esc(venue.name) + '</dd><dt>Cuándo</dt><dd>' + cap(fecha(date)) + ', ' + time + '</dd>' +
-      (g ? '<dt>Ya están</dt><dd>' + who(g.players) + '</dd><dt>Busca</dt><dd>' + cap(levelsText(g.accepted_levels)) + ', ' + faltan(g.missing) + '</dd>' : '') + '</dl>' +
-      (g ? '' : '<p class="small muted">' + (coord() ? 'Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.' : 'La cancha se asigna cuando el partido se completa.') + '</p>') + '</div>' +
+    let h = '<p class="crumbs"><button type="button" data-a="back">‹ ' + L('Volver', 'Back') + '</button></p><h1 class="h">' + (g ? L('Unirme al partido', 'Join the match') : L('Abrir partido', 'Open a match')) + '</h1>' +
+      '<div class="card"><dl class="kv"><dt>' + L('Deporte', 'Sport') + '</dt><dd>' + esc(sportLabel(sport.name)) + '</dd><dt>' + L('Lugar', 'Place') + '</dt><dd>' + esc(venue.name) + '</dd><dt>' + L('Cuándo', 'When') + '</dt><dd>' + fechaHora(date, time) + '</dd>' +
+      (g ? '<dt>' + L('Ya están', 'Already in') + '</dt><dd>' + who(g.players) + '</dd><dt>' + L('Busca', 'Looking for') + '</dt><dd>' + cap(levelsText(g.accepted_levels)) + ', ' + faltan(g.missing) + '</dd>' : '') + '</dl>' +
+      (g ? '' : '<p class="small muted">' + (coord() ? L('Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll share everyone's contact details so you can book the court with the club.") : L('La cancha se asigna cuando el partido se completa.', 'The court is assigned when the match fills up.')) + '</p>') + '</div>' +
       '<form data-f="play" novalidate>' +
-      '<label class="f" for="ini">Tus iniciales</label><input id="ini" name="initials" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="JR" value="' + esc(prefs.initials || '') + '">' +
+      '<label class="f" for="ini">' + L('Tus iniciales', 'Your initials') + '</label><input id="ini" name="initials" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="JR" value="' + esc(prefs.initials || '') + '">' +
       levelRadios(sport, g ? g.accepted_levels : null, myLevel);
     if (!g) {
       if (sizes.length > 1) {
-        h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">¿Cuántos jugadores?</legend><div class="checks">' +
-          sizes.map((n) => '<label><input type="radio" name="capacity" value="' + n + '"' + (n === sizes[0] ? ' checked' : '') + '>' + n + (n === 2 ? ' (singles)' : ' (dobles)') + '</label>').join('') + '</div></fieldset>';
+        h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('¿Cuántos jugadores?', 'How many players?') + '</legend><div class="checks">' +
+          sizes.map((n) => '<label><input type="radio" name="capacity" value="' + n + '"' + (n === sizes[0] ? ' checked' : '') + '>' + n + (n === 2 ? ' (singles)' : L(' (dobles)', ' (doubles)')) + '</label>').join('') + '</div></fieldset>';
       }
-      h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Niveles que aceptas <small style="font-weight:400" class="muted">(incluye el tuyo)</small></legend><div class="checks">' +
-        sport.categories.map((c) => '<label title="' + esc(c.label) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '" checked>Nivel ' + c.level + '</label>').join('') + '</div></fieldset>';
+      h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('Niveles que aceptas', 'Levels you accept') + ' <small style="font-weight:400" class="muted">' + L('(incluye el tuyo)', '(include yours)') + '</small></legend><div class="checks">' +
+        sport.categories.map((c) => '<label title="' + esc(catLabel(c)) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '" checked>' + L('Nivel ', 'Level ') + c.level + '</label>').join('') + '</div></fieldset>';
     }
-    h += '<label class="f" for="email">Email de contacto</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="tu@correo.cl" value="' + esc(prefs.email || '') + '">' +
-      (waField() ? '<label class="f" for="wa">WhatsApp <small>(opcional)</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' : '') +
-      (waField() && WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>Avísenme también por WhatsApp</label></div>' : '') +
-      '<p class="small muted">Tu contacto solo se comparte con quienes jueguen contigo, cuando el partido se confirme.</p>' +
-      errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? 'Enviando…' : g ? 'Unirme al partido' : 'Publicar partido') + '</button></div></form>';
+    h += '<label class="f" for="email">' + L('Email de contacto', 'Contact email') + '</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="' + L('tu@correo.cl', 'you@email.com') + '" value="' + esc(prefs.email || '') + '">' +
+      (waField() ? '<label class="f" for="wa">WhatsApp <small>' + L('(opcional)', '(optional)') + '</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' : '') +
+      (waField() && WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>' + L('Avísenme también por WhatsApp', 'Also notify me on WhatsApp') + '</label></div>' : '') +
+      '<p class="small muted">' + L('Tu contacto solo se comparte con quienes jueguen contigo, cuando el partido se confirme.', 'Your contact details are only shared with the people playing with you, once the match is confirmed.') + '</p>' +
+      (lang === 'en' ? '<p class="small muted">We\'ll email you in English.</p>' : '') +
+      errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? L('Enviando…', 'Sending…') : g ? L('Unirme al partido', 'Join the match') : L('Publicar partido', 'Post match')) + '</button></div></form>';
     return h;
   }
 
   const STATUS_TAG = {
     abierto: (g) => '<span class="tag">' + cap(faltan(g.missing)) + '</span>',
-    confirmado: () => '<span class="tag ok">Confirmado</span>',
-    sin_cancha: () => '<span class="tag off">Sin cancha</span>',
-    cancelado: () => '<span class="tag off">Cancelado</span>',
+    confirmado: () => '<span class="tag ok">' + L('Confirmado', 'Confirmed') + '</span>',
+    sin_cancha: () => '<span class="tag off">' + L('Sin cancha', 'No court') + '</span>',
+    cancelado: () => '<span class="tag off">' + L('Cancelado', 'Cancelled') + '</span>',
   };
 
   function gameCard(g, withCancel) {
     let h = '<div class="card"><p>' + STATUS_TAG[g.status](g) + '</p>' +
-      '<h3>' + esc(g.sport.name) + ', ' + fecha(g.date) + ' a las ' + g.time + '</h3>' +
-      '<dl class="kv"><dt>Lugar</dt><dd>' + esc(g.venue.name) + (g.venue.address ? ', ' + esc(g.venue.address) : '') + '</dd>' +
-      (g.court ? '<dt>Cancha</dt><dd>' + esc(g.court.name) + (g.court.surface ? ', ' + esc(g.court.surface.toLowerCase()) : '') + (g.court.notes ? '. ' + esc(g.court.notes) : '') + '</dd>'
-        : coord() ? (g.status === 'confirmado' ? '<dt>Cancha</dt><dd>Resérvenla con el club</dd>' : '')
-        : '<dt>Cancha</dt><dd>' + (g.status === 'abierto' ? 'Se asigna cuando se complete' : g.status === 'sin_cancha' ? 'No quedó cancha libre' : '—') + '</dd>') +
-      '<dt>Juegan</dt><dd>' + who(g.players) + '</dd>' +
-      (g.status === 'abierto' ? '<dt>Busca</dt><dd>' + cap(levelsText(g.accepted_levels)) + '</dd>' : '') + '</dl>';
+      '<h3>' + esc(sportLabel(g.sport.name)) + ', ' + fecha(g.date) + L(' a las ', ' at ') + g.time + '</h3>' +
+      '<dl class="kv"><dt>' + L('Lugar', 'Place') + '</dt><dd>' + esc(g.venue.name) + (g.venue.address ? ', ' + esc(g.venue.address) : '') + '</dd>' +
+      (g.court ? '<dt>' + L('Cancha', 'Court') + '</dt><dd>' + esc(g.court.name) + (g.court.surface ? ', ' + esc(g.court.surface.toLowerCase()) : '') + (g.court.notes ? '. ' + esc(g.court.notes) : '') + '</dd>'
+        : coord() ? (g.status === 'confirmado' ? '<dt>' + L('Cancha', 'Court') + '</dt><dd>' + L('Resérvenla con el club', 'Book it with the club') + '</dd>' : '')
+        : '<dt>' + L('Cancha', 'Court') + '</dt><dd>' + (g.status === 'abierto' ? L('Se asigna cuando se complete', "Assigned when it's full") : g.status === 'sin_cancha' ? L('No quedó cancha libre', 'No free court left') : '—') + '</dd>') +
+      '<dt>' + L('Juegan', 'Players') + '</dt><dd>' + who(g.players) + '</dd>' +
+      (g.status === 'abierto' ? '<dt>' + L('Busca', 'Looking for') + '</dt><dd>' + cap(levelsText(g.accepted_levels)) + '</dd>' : '') + '</dl>';
     const map = (g.court && g.court.maps_url) || g.venue.maps_url;
-    if (map && g.status !== 'cancelado') h += '<p><a href="' + esc(map) + '" target="_blank" rel="noopener">Cómo llegar (Google Maps)</a></p>';
-    if (g.status === 'sin_cancha') h += '<p class="small">El partido se completó, pero ya no quedan canchas libres a esa hora. Elige otro turno o cancela tu cupo.</p>';
-    if (g.status === 'cancelado') h += '<p class="small">El administrador canceló este partido.</p>';
+    if (map && g.status !== 'cancelado') h += '<p><a href="' + esc(map) + '" target="_blank" rel="noopener">' + L('Cómo llegar (Google Maps)', 'Directions (Google Maps)') + '</a></p>';
+    if (g.status === 'sin_cancha') h += '<p class="small">' + L('El partido se completó, pero ya no quedan canchas libres a esa hora. Elige otro turno o cancela tu cupo.', 'The match filled up, but there are no free courts left at that time. Pick another time or cancel your spot.') + '</p>';
+    if (g.status === 'cancelado') h += '<p class="small">' + L('El administrador canceló este partido.', 'The administrator cancelled this match.') + '</p>';
     const others = g.players.filter((p) => !p.me && p.email);
     if (others.length) {
-      h += '<h3>Contacto de tus compañeros</h3>' + others.map((p) => {
+      h += '<h3>' + L('Contacto de tus compañeros', "Your partners' contact details") + '</h3>' + others.map((p) => {
         const wa = (p.whatsapp || '').replace(/\D/g, '');
-        const msg = encodeURIComponent('Hola, soy tu compañero de ' + g.sport.name + ' por Peloteo: ' + fecha(g.date) + ' a las ' + g.time + '.');
+        const msg = encodeURIComponent(L('Hola, soy tu compañero de ' + g.sport.name + ' por Peloteo: ' + fecha(g.date) + ' a las ' + g.time + '.',
+          "Hi, I'm your " + sportLabel(g.sport.name) + ' partner from Peloteo: ' + fecha(g.date) + ' at ' + g.time + '.'));
         return '<p>' + esc(p.initials) + ': <a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' +
-          (wa ? ' o <a href="https://wa.me/' + wa + '?text=' + msg + '" target="_blank" rel="noopener">escribirle por WhatsApp</a>' : '') + '</p>';
+          (wa ? L(' o ', ' or ') + '<a href="https://wa.me/' + wa + '?text=' + msg + '" target="_blank" rel="noopener">' + L('escribirle por WhatsApp', 'message on WhatsApp') + '</a>' : '') + '</p>';
       }).join('');
     }
     if (withCancel && g.status !== 'cancelado') {
       if (g.can_cancel) {
-        h += '<div class="actions"><button type="button" class="btn danger sm" data-a="cancelMine" data-id="' + esc(g.id) + '">' + (S.confirm === g.id ? 'Toca de nuevo para cancelar' : 'Cancelar mi cupo') + '</button></div>';
+        h += '<div class="actions"><button type="button" class="btn danger sm" data-a="cancelMine" data-id="' + esc(g.id) + '">' + (S.confirm === g.id ? L('Toca de nuevo para cancelar', 'Tap again to cancel') : L('Cancelar mi cupo', 'Cancel my spot')) + '</button></div>';
       } else {
-        h += '<p class="small muted">Ya no se puede cancelar: el plazo termina 1 hora antes del inicio.</p>';
+        h += '<p class="small muted">' + L('Ya no se puede cancelar: el plazo termina 1 hora antes del inicio.', 'It can no longer be cancelled: the deadline is 1 hour before the start.') + '</p>';
       }
     }
     return h + '</div>';
@@ -364,14 +407,14 @@
 
   function vDone() {
     const g = S.done;
-    if (!g) return '<p>Ese partido ya no existe.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Volver al inicio</button></div>';
-    const title = g.status === 'confirmado' ? '¡Partido confirmado!' : g.status === 'sin_cancha' ? 'Partido completo, sin cancha' : 'Partido publicado';
-    const text = g.status === 'confirmado' ? (g.court ? 'Ya tienen cancha asignada. Estos son los datos.' : '¡Ya están todos! Pónganse de acuerdo y reserven la cancha con el club.')
-      : g.status === 'sin_cancha' ? 'Se completó, pero ya no quedan canchas libres a esa hora. Les avisaremos para elegir otro turno.'
-      : coord() ? 'Cuando se complete, te avisamos y les pasamos el contacto de todos para que reserven la cancha con el club.'
-      : 'Cuando se complete, les asignamos la primera cancha libre de ese turno y te avisamos.';
+    if (!g) return '<p>' + L('Ese partido ya no existe.', 'That match no longer exists.') + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Volver al inicio', 'Back to home') + '</button></div>';
+    const title = g.status === 'confirmado' ? L('¡Partido confirmado!', 'Match confirmed!') : g.status === 'sin_cancha' ? L('Partido completo, sin cancha', 'Match full, no court') : L('Partido publicado', 'Match posted');
+    const text = g.status === 'confirmado' ? (g.court ? L('Ya tienen cancha asignada. Estos son los datos.', 'You have a court assigned. Here are the details.') : L('¡Ya están todos! Pónganse de acuerdo y reserven la cancha con el club.', "Everyone's in! Get in touch and book the court with the club."))
+      : g.status === 'sin_cancha' ? L('Se completó, pero ya no quedan canchas libres a esa hora. Les avisaremos para elegir otro turno.', "It filled up, but there are no free courts left at that time. We'll let you know so you can pick another time.")
+      : coord() ? L('Cuando se complete, te avisamos y les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll let you know and share everyone's contact details so you can book the court with the club.")
+      : L('Cuando se complete, les asignamos la primera cancha libre de ese turno y te avisamos.', "When it fills up, we'll assign the first free court at that time and let you know.");
     return '<h1 class="h">' + title + '</h1><p>' + text + '</p>' + gameCard(g, false) +
-      '<div class="actions"><button type="button" class="btn" data-a="go" data-v="mine">Ver mis partidos</button><button type="button" class="btn ghost" data-a="go" data-v="home">Agendar otro</button></div>';
+      '<div class="actions"><button type="button" class="btn" data-a="go" data-v="mine">' + L('Ver mis partidos', 'See my matches') + '</button><button type="button" class="btn ghost" data-a="go" data-v="home">' + L('Agendar otro', 'Book another') + '</button></div>';
   }
 
   // ---------------- búsqueda ----------------
@@ -401,61 +444,62 @@
 
   function vSearch() {
     const q = S.search;
-    if (!q) return '<h1 class="h">Buscar jugadores</h1><p class="muted">Cargando…</p>';
-    if (!S.sports.length) return '<h1 class="h">Buscar jugadores</h1><p class="muted">Todavía no hay deportes disponibles.</p>';
+    const title = '<h1 class="h">' + L('Buscar jugadores', 'Find players') + '</h1>';
+    if (!q) return title + '<p class="muted">' + L('Cargando…', 'Loading…') + '</p>';
+    if (!S.sports.length) return title + '<p class="muted">' + L('Todavía no hay deportes disponibles.', 'No sports available yet.') + '</p>';
     const offer = S.searchOffers.find((o) => o.sport.id === q.sportId);
-    let h = '<h1 class="h">Buscar jugadores</h1><p class="muted">Encuentra partidos abiertos que aceptan tu nivel.</p><form data-f="search" novalidate>' +
-      '<div class="two"><div><label class="f" for="s-sp">Deporte</label><select id="s-sp" name="sportKey" data-s="sportKey">' + S.sports.map((n) => '<option value="' + esc(n.key) + '"' + (n.key === q.sportKey ? ' selected' : '') + '>' + esc(n.name) + '</option>').join('') + '</select></div>' +
-      '<div><label class="f" for="s-ve">Lugar</label><select id="s-ve" name="sportId" data-s="sportId">' + S.searchOffers.map((o) => '<option value="' + esc(o.sport.id) + '"' + (o.sport.id === q.sportId ? ' selected' : '') + '>' + esc(o.venue.name) + '</option>').join('') + '</select></div></div>' +
-      '<div class="two"><div><label class="f" for="s-f">Desde el día</label><input id="s-f" name="from" type="date" value="' + q.from + '" min="' + S.today.date + '" max="' + S.today.last_bookable + '"></div>' +
-      '<div><label class="f" for="s-t">Hasta el día</label><input id="s-t" name="to" type="date" value="' + q.to + '" min="' + S.today.date + '" max="' + S.today.last_bookable + '"></div></div>' +
-      '<div class="two"><div><label class="f" for="s-h1">Desde las</label><input id="s-h1" name="t1" type="time" value="' + q.t1 + '"></div>' +
-      '<div><label class="f" for="s-h2">Hasta las</label><input id="s-h2" name="t2" type="time" value="' + q.t2 + '"></div></div>' +
+    let h = title + '<p class="muted">' + L('Encuentra partidos abiertos que aceptan tu nivel.', 'Find open matches that accept your level.') + '</p><form data-f="search" novalidate>' +
+      '<div class="two"><div><label class="f" for="s-sp">' + L('Deporte', 'Sport') + '</label><select id="s-sp" name="sportKey" data-s="sportKey">' + S.sports.map((n) => '<option value="' + esc(n.key) + '"' + (n.key === q.sportKey ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + '</option>').join('') + '</select></div>' +
+      '<div><label class="f" for="s-ve">' + L('Lugar', 'Place') + '</label><select id="s-ve" name="sportId" data-s="sportId">' + S.searchOffers.map((o) => '<option value="' + esc(o.sport.id) + '"' + (o.sport.id === q.sportId ? ' selected' : '') + '>' + esc(o.venue.name) + '</option>').join('') + '</select></div></div>' +
+      '<div class="two"><div><label class="f" for="s-f">' + L('Desde el día', 'From') + '</label><input id="s-f" name="from" type="date" value="' + q.from + '" min="' + S.today.date + '" max="' + S.today.last_bookable + '"></div>' +
+      '<div><label class="f" for="s-t">' + L('Hasta el día', 'To') + '</label><input id="s-t" name="to" type="date" value="' + q.to + '" min="' + S.today.date + '" max="' + S.today.last_bookable + '"></div></div>' +
+      '<div class="two"><div><label class="f" for="s-h1">' + L('Desde las', 'From (time)') + '</label><input id="s-h1" name="t1" type="time" value="' + q.t1 + '"></div>' +
+      '<div><label class="f" for="s-h2">' + L('Hasta las', 'To (time)') + '</label><input id="s-h2" name="t2" type="time" value="' + q.t2 + '"></div></div>' +
       (offer ? levelRadios(offer.sport, null, q.level) : '') +
-      errBox() + '<div class="actions"><button class="btn block" type="submit">Buscar partidos</button></div></form>';
+      errBox() + '<div class="actions"><button class="btn block" type="submit">' + L('Buscar partidos', 'Search matches') + '</button></div></form>';
     if (S.results) {
       const r = S.results;
-      h += '<h2 id="resultados">' + (r.length ? (r.length === 1 ? '1 partido encontrado' : r.length + ' partidos encontrados') : 'Nadie busca partido en ese rango') + '</h2>';
-      if (!r.length) h += '<p class="muted">Abre tú un partido y quien busque después te encontrará.</p><div class="actions"><button type="button" class="btn ghost" data-a="openFromSearch">Abrir un partido</button></div>';
+      h += '<h2 id="resultados">' + (r.length ? (r.length === 1 ? L('1 partido encontrado', '1 match found') : r.length + L(' partidos encontrados', ' matches found')) : L('Nadie busca partido en ese rango', 'Nobody is looking for a match in that range')) + '</h2>';
+      if (!r.length) h += '<p class="muted">' + L('Abre tú un partido y quien busque después te encontrará.', "Open a match yourself and whoever searches later will find you.") + '</p><div class="actions"><button type="button" class="btn ghost" data-a="openFromSearch">' + L('Abrir un partido', 'Open a match') + '</button></div>';
       else h += '<ul class="list">' + r.map((g) =>
-        '<li><button type="button" class="row" data-a="pickResult" data-id="' + esc(g.id) + '"><span><span class="name">' + cap(fecha(g.date)) + ', ' + g.time + '</span><span class="meta">' +
-        who(g.players) + '. ' + cap(faltan(g.missing)) + '. Busca ' + levelsText(g.accepted_levels) + '</span></span><span class="go">Unirme</span></button></li>').join('') + '</ul>';
+        '<li><button type="button" class="row" data-a="pickResult" data-id="' + esc(g.id) + '"><span><span class="name">' + fechaHora(g.date, g.time) + '</span><span class="meta">' +
+        who(g.players) + '. ' + cap(faltan(g.missing)) + '. ' + L('Busca ', 'Looking for ') + levelsText(g.accepted_levels) + '</span></span><span class="go">' + L('Unirme', 'Join') + '</span></button></li>').join('') + '</ul>';
     }
     return h;
   }
 
   function vMine() {
-    let h = '<h1 class="h">Mis partidos</h1>';
-    if (!S.mineLoaded) return h + '<p class="muted">Cargando…</p>';
-    if (!S.mine.length) return h + '<div class="card"><p>Aún no tienes partidos agendados.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Agendar un partido</button></div></div>';
+    let h = '<h1 class="h">' + L('Mis partidos', 'My matches') + '</h1>';
+    if (!S.mineLoaded) return h + '<p class="muted">' + L('Cargando…', 'Loading…') + '</p>';
+    if (!S.mine.length) return h + '<div class="card"><p>' + L('Aún no tienes partidos agendados.', "You don't have any matches booked yet.") + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Agendar un partido', 'Book a match') + '</button></div></div>';
     return h + S.mine.map((g) => gameCard(g, true)).join('') +
-      '<p class="small muted">Tus partidos quedan guardados en este navegador. Cada correo de aviso trae un enlace para cancelar desde otro dispositivo.</p>';
+      '<p class="small muted">' + L('Tus partidos quedan guardados en este navegador. Cada correo de aviso trae un enlace para cancelar desde otro dispositivo.', 'Your matches are saved in this browser. Every notification email has a link to cancel from another device.') + '</p>';
   }
 
   // ---------------- enlace de cancelación (correo) ----------------
   function vToken() {
-    let h = '<h1 class="h">Cancelar mi cupo</h1>';
+    let h = '<h1 class="h">' + L('Cancelar mi cupo', 'Cancel my spot') + '</h1>';
     if (S.tokenDone) {
-      return h + '<div class="card"><p>Listo, liberaste tu cupo. Avisamos al resto de los jugadores.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Agendar otro partido</button></div></div>';
+      return h + '<div class="card"><p>' + L('Listo, liberaste tu cupo. Avisamos al resto de los jugadores.', "Done, you've freed up your spot. We've let the other players know.") + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Agendar otro partido', 'Book another match') + '</button></div></div>';
     }
     const g = S.tokenGame;
     if (!g) {
-      return h + '<div class="card"><p>' + esc(S.err || 'Cargando…') + '</p>' + (S.err ? '<div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Ir al inicio</button></div>' : '') + '</div>';
+      return h + '<div class="card"><p>' + esc(S.err || L('Cargando…', 'Loading…')) + '</p>' + (S.err ? '<div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Ir al inicio', 'Go to home') + '</button></div>' : '') + '</div>';
     }
     h += gameCard(g, false);
-    if (g.status === 'cancelado') return h + '<p class="muted">Este partido ya fue cancelado; no tienes que hacer nada.</p>';
-    if (!g.can_cancel) return h + '<p class="muted">Ya no se puede cancelar: el plazo termina 1 hora antes del inicio.</p>';
+    if (g.status === 'cancelado') return h + '<p class="muted">' + L('Este partido ya fue cancelado; no tienes que hacer nada.', "This match was already cancelled; you don't need to do anything.") + '</p>';
+    if (!g.can_cancel) return h + '<p class="muted">' + L('Ya no se puede cancelar: el plazo termina 1 hora antes del inicio.', 'It can no longer be cancelled: the deadline is 1 hour before the start.') + '</p>';
     return h + (S.err ? '<p class="err" role="alert">' + esc(S.err) + '</p>' : '') +
-      '<p>Si no puedes jugar, libera tu cupo para que otro jugador pueda tomarlo. Avisaremos al resto.</p>' +
-      '<div class="actions"><button type="button" class="btn danger" data-a="cancelToken">' + (S.confirm === 'token' ? 'Toca de nuevo para cancelar' : 'Cancelar mi cupo') + '</button>' +
-      '<button type="button" class="btn ghost" data-a="go" data-v="home">No, mantenerlo</button></div>';
+      '<p>' + L('Si no puedes jugar, libera tu cupo para que otro jugador pueda tomarlo. Avisaremos al resto.', "If you can't play, free up your spot so someone else can take it. We'll let the others know.") + '</p>' +
+      '<div class="actions"><button type="button" class="btn danger" data-a="cancelToken">' + (S.confirm === 'token' ? L('Toca de nuevo para cancelar', 'Tap again to cancel') : L('Cancelar mi cupo', 'Cancel my spot')) + '</button>' +
+      '<button type="button" class="btn ghost" data-a="go" data-v="home">' + L('No, mantenerlo', 'No, keep it') + '</button></div>';
   }
 
   async function openToken(token) {
     S.view = 'token'; S.token = token; S.tokenGame = null; S.tokenDone = false; S.err = ''; S.confirm = null;
     render();
     const r = await api('POST', '/api/token/game', { token });
-    if (r.ok) S.tokenGame = r.data.game; else S.err = r.data.error || 'No pudimos abrir ese enlace.';
+    if (r.ok) S.tokenGame = r.data.game; else S.err = r.data.error || L('No pudimos abrir ese enlace.', "We couldn't open that link.");
     render();
   }
 
@@ -473,7 +517,7 @@
 
   function view() {
     switch (S.view) {
-      case 'loading': return '<p class="muted" style="padding:2rem 0">Cargando canchas…</p>';
+      case 'loading': return '<p class="muted" style="padding:2rem 0">' + L('Cargando canchas…', 'Loading courts…') + '</p>';
       case 'venue': return vVenue();
       case 'calendar': return vCalendar();
       case 'form': return vForm();
@@ -508,10 +552,12 @@
     }
     if (S.field) { const el = app.querySelector('[name="' + S.field + '"]'); if (el) el.focus(); S.field = ''; }
     const n = activeMine();
-    $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="Peloteo, ir al inicio" width="648" height="120"></button><nav aria-label="Principal">' +
-      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">Buscar</span></button>' +
-      '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">Mis partidos' + (n ? '<b aria-label="' + n + ' activos">' + n + '</b>' : '') + '</button>' +
-      '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">Configuración</span></a></nav>';
+    const langBtn = (l, code, name) => '<button type="button" data-a="lang" data-l="' + l + '" lang="' + l + '" aria-pressed="' + (lang === l) + '" aria-label="' + name + '" title="' + name + '">' + FLAGS[l] + '<span>' + code + '</span></button>';
+    $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="' + L('Peloteo, ir al inicio', 'Peloteo, go to home') + '" width="648" height="120"></button><nav aria-label="' + L('Principal', 'Main') + '">' +
+      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">' + L('Buscar', 'Search') + '</span></button>' +
+      '<span class="langs" role="group" aria-label="Idioma / Language">' + langBtn('es', 'ESP', 'Español') + langBtn('en', 'ENG', 'English') + '</span>' +
+      '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">' + icon('mis', 18) + '<span class="lbl">' + L('Mis partidos', 'My matches') + '</span>' + (n ? '<b aria-label="' + n + L(' activos', ' active') + '">' + n + '</b>' : '') + '</button>' +
+      '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">' + L('Configuración', 'Settings') + '</span></a></nav>';
   }
 
   // ---------------- formularios ----------------
@@ -530,12 +576,12 @@
     const sport = S.offer.sport;
     const level = Number(d.level) || 0;
     const ini = (d.initials || '').toUpperCase().replace(/[^A-ZÑÁÉÍÓÚÜ]/g, '');
-    S.err = ini.length < 2 || ini.length > 4 ? 'Escribe tus iniciales (2 a 4 letras).'
-      : !level ? 'Elige tu nivel de juego.'
-      : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((d.email || '').trim()) ? 'Revisa el email: lo usamos para avisarte.'
-      : (d.whatsapp && d.whatsapp.replace(/\D/g, '').length < 8) ? 'Revisa el número de WhatsApp o déjalo en blanco.'
-      : (!S.game && !(d.accepted_levels || []).length) ? 'Elige qué niveles aceptas.'
-      : (!S.game && !(d.accepted_levels || []).includes(level)) ? 'Incluye tu propio nivel entre los aceptados.' : '';
+    S.err = ini.length < 2 || ini.length > 4 ? L('Escribe tus iniciales (2 a 4 letras).', 'Enter your initials (2 to 4 letters).')
+      : !level ? L('Elige tu nivel de juego.', 'Choose your playing level.')
+      : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((d.email || '').trim()) ? L('Revisa el email: lo usamos para avisarte.', 'Check your email address: we use it to keep you posted.')
+      : (d.whatsapp && d.whatsapp.replace(/\D/g, '').length < 8) ? L('Revisa el número de WhatsApp o déjalo en blanco.', 'Check the WhatsApp number or leave it blank.')
+      : (!S.game && !(d.accepted_levels || []).length) ? L('Elige qué niveles aceptas.', 'Choose which levels you accept.')
+      : (!S.game && !(d.accepted_levels || []).includes(level)) ? L('Incluye tu propio nivel entre los aceptados.', 'Include your own level among the accepted ones.') : '';
     if (S.err) { render(); return; }
 
     const key = 'lvl_' + sport.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -543,7 +589,7 @@
     prefs[key] = level;
     LS.set('peloteo_prefs', prefs);
 
-    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in };
+    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in, lang };
     S.busy = true; S.err = ''; render();
     const r = S.game
       ? await api('POST', '/api/games/' + encodeURIComponent(S.game.id) + '/join', { player })
@@ -555,7 +601,7 @@
     if (!r.ok) {
       const code = r.data.code;
       if (code === 'turno_ocupado' || code === 'encuentro_completo' || code === 'turno_cerrado' || code === 'encuentro_cancelado' || code === 'encuentro_no_existe') {
-        toast(r.data.error || 'Ese turno ya no está disponible. Elige otro.');
+        toast(r.data.error || L('Ese turno ya no está disponible. Elige otro.', 'That time is no longer available. Pick another one.'));
         const back = S.fromSearch ? 'search' : S.fromBlock ? 'block' : 'calendar';
         S.game = null;
         if (back === 'calendar' && S.date) { S.view = 'calendar'; await Promise.all([loadMonth(), loadDay()]); render(); }
@@ -563,7 +609,7 @@
         return;
       }
       if (code === 'ya_inscrito') { toast(r.data.error); go('mine'); return; }
-      S.err = r.data.error || 'No se pudo guardar. Inténtalo de nuevo.'; S.field = r.data.field || ''; render(); return;
+      S.err = r.data.error || L('No se pudo guardar. Inténtalo de nuevo.', "We couldn't save it. Please try again."); S.field = r.data.field || ''; render(); return;
     }
     S.done = r.data.game; S.game = null;
     await loadMine();
@@ -578,12 +624,12 @@
     async search(d) {
       const q = S.search;
       Object.assign(q, { from: d.from, to: d.to, t1: d.t1, t2: d.t2, level: Number(d.level) || null });
-      if (!q.level) { S.err = 'Elige tu nivel de juego.'; render(); return; }
-      if (q.to < q.from || q.t2 < q.t1) { S.err = 'Revisa el rango: el final está antes del inicio.'; render(); return; }
+      if (!q.level) { S.err = L('Elige tu nivel de juego.', 'Choose your playing level.'); render(); return; }
+      if (q.to < q.from || q.t2 < q.t1) { S.err = L('Revisa el rango: el final está antes del inicio.', 'Check the range: the end is before the start.'); render(); return; }
       S.err = '';
       const qs = new URLSearchParams({ sport_id: q.sportId, level: String(q.level), date_from: q.from, date_to: q.to, time_from: q.t1, time_to: q.t2 });
       const r = await api('GET', '/api/search?' + qs);
-      if (!r.ok) { S.err = r.data.error || 'No se pudo buscar.'; render(); return; }
+      if (!r.ok) { S.err = r.data.error || L('No se pudo buscar.', "We couldn't search."); render(); return; }
       S.results = r.data; render();
       const el = document.getElementById('resultados'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
@@ -595,11 +641,16 @@
     block(d) { S.block = { date: d.d, half: d.h }; S.fromBlock = false; go('block'); },
     allDay() { S.preset = null; render(); },
     intro() { openIntro(); },
+    lang(d) {
+      if (d.l === lang) return;
+      lang = d.l === 'en' ? 'en' : 'es'; saveLang(); lastKey = ''; render();
+      toast(L('Sitio en español.', 'Site in English.'));
+    },
     async pickOpen(d) {
       const g = (S.blockGames || []).find((x) => x.id === d.id); if (!g) return;
       const offers = (await get('/api/venues?sport=' + encodeURIComponent(g.sport.key))) || [];
       const offer = offers.find((o) => o.sport.id === g.sport.id);
-      if (!offer) { toast('Ese partido ya no está disponible.'); go('block'); return; }
+      if (!offer) { toast(L('Ese partido ya no está disponible.', 'That match is no longer available.')); go('block'); return; }
       S.offers = offers; S.offer = offer; S.sportKey = g.sport.key;
       S.game = g; S.date = g.date; S.time = g.time; S.fromSearch = false; S.fromBlock = true;
       go('form');
@@ -638,7 +689,7 @@
       S.confirm = null;
       const r = await api('POST', '/api/token/cancel', { token: S.token });
       if (!r.ok) {
-        S.err = r.data.error || 'No se pudo cancelar.';
+        S.err = r.data.error || L('No se pudo cancelar.', "We couldn't cancel it.");
         const again = await api('POST', '/api/token/game', { token: S.token });
         S.tokenGame = again.ok ? again.data.game : null;
         render(); return;
@@ -649,8 +700,8 @@
       if (S.confirm !== d.id) { S.confirm = d.id; render(); return; }
       S.confirm = null;
       const r = await api('POST', '/api/games/' + encodeURIComponent(d.id) + '/cancel', {});
-      if (!r.ok) { toast(r.data.error || 'No se pudo cancelar.'); await loadMine(); render(); return; }
-      toast('Cancelaste tu cupo.'); await loadMine(); render();
+      if (!r.ok) { toast(r.data.error || L('No se pudo cancelar.', "We couldn't cancel it.")); await loadMine(); render(); return; }
+      toast(L('Cancelaste tu cupo.', 'You cancelled your spot.')); await loadMine(); render();
     },
   };
 
@@ -665,9 +716,9 @@
     document.cookie = INTRO_COOKIE + '=1; Max-Age=34560000; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
   };
   // Ilustraciones: siempre sobre verde cancha, así se ven igual en modo claro y oscuro.
-  const ART = (() => {
-    const W = 'rgba(255,255,255,.9)', L = 'rgba(255,255,255,.22)', BALL = '#D7E845', INK = '#1B2905', OR = '#EE8A24';
-    const court = '<g fill="none" stroke="' + L + '" stroke-width="1.5"><rect x="18" y="14" width="204" height="112" rx="2"/><path d="M18 30h204M18 110h204M120 14v112M60 30v80M180 30v80M60 70h120"/></g>';
+  const ART = () => {
+    const W = 'rgba(255,255,255,.9)', LINE = 'rgba(255,255,255,.22)', BALL = '#D7E845', INK = '#1B2905', OR = '#EE8A24';
+    const court = '<g fill="none" stroke="' + LINE + '" stroke-width="1.5"><rect x="18" y="14" width="204" height="112" rx="2"/><path d="M18 30h204M18 110h204M120 14v112M60 30v80M180 30v80M60 70h120"/></g>';
     const ball = (x, y, r) => '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + BALL + '"/>' +
       '<path d="M' + (x - r * 0.72) + ' ' + (y - r * 0.7) + 'c' + (r * 0.55) + ' ' + (r * 0.45) + ' ' + (r * 0.55) + ' ' + (r * 0.95) + ' 0 ' + (r * 1.4) +
       'M' + (x + r * 0.72) + ' ' + (y - r * 0.7) + 'c' + (-r * 0.55) + ' ' + (r * 0.45) + ' ' + (-r * 0.55) + ' ' + (r * 0.95) + ' 0 ' + (r * 1.4) +
@@ -679,12 +730,12 @@
     const blk = (x, y, top, fill) => '<path d="' + (top
       ? 'M' + x + ' ' + (y + 26) + 'V' + (y + 6) + 'a6 6 0 0 1 6-6h14a6 6 0 0 1 6 6V' + (y + 26) + 'z'
       : 'M' + x + ' ' + y + 'h26V' + (y + 20) + 'a6 6 0 0 1-6 6H' + (x + 6) + 'a6 6 0 0 1-6-6z') + '" fill="' + fill + '"/>';
-    const days = ['L', 'M', 'M', 'J', 'V'];
+    const days = L(['L', 'M', 'M', 'J', 'V'], ['M', 'T', 'W', 'T', 'F']);
     return [
       // 1. Dos jugadores y la pelota que va de uno a otro.
       svg(person(62, 52, W) + person(178, 52, W) +
         '<path d="M80 50Q120 0 160 50" fill="none" stroke="' + BALL + '" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>' + ball(120, 27, 9) +
-        '<rect x="84" y="104" width="72" height="20" rx="10" fill="' + BALL + '"/><text x="120" y="118" text-anchor="middle" font-size="11" font-weight="800" fill="' + INK + '">¿JUGAMOS?</text>'),
+        '<rect x="' + L(84, 78) + '" y="104" width="' + L(72, 84) + '" height="20" rx="10" fill="' + BALL + '"/><text x="120" y="118" text-anchor="middle" font-size="11" font-weight="800" fill="' + INK + '">' + L('¿JUGAMOS?', "LET'S PLAY?") + '</text>'),
       // 2. El calendario de bloques AM y PM, con uno naranjo elegido y su hora.
       svg(days.map((d, i) => {
         const x = 47 + i * 30, pick = i === 2;
@@ -696,34 +747,39 @@
         '<rect x="84" y="104" width="72" height="22" rx="11" fill="' + BALL + '"/><text x="120" y="119" text-anchor="middle" font-size="12" font-weight="800" fill="' + INK + '">18:00</text>'),
       // 3. Dos mensajes entre los jugadores para ponerse de acuerdo.
       svg('<path d="M30 26h138a10 10 0 0 1 10 10v16a10 10 0 0 1-10 10H50l-12 9v-9h-8a10 10 0 0 1-10-10V36a10 10 0 0 1 10-10z" fill="#FFFFFF"/>' +
-        '<text x="32" y="48" font-size="11.5" font-weight="700" fill="#14251D">¿Reservo yo la cancha?</text>' +
+        '<text x="32" y="48" font-size="11.5" font-weight="700" fill="#14251D">' + L('¿Reservo yo la cancha?', 'Shall I book the court?') + '</text>' +
         '<path d="M72 78h138a10 10 0 0 1 10 10v16a10 10 0 0 1-10 10h-8v9l-12-9H72a10 10 0 0 1-10-10V88a10 10 0 0 1 10-10z" fill="' + BALL + '"/>' +
-        '<text x="74" y="100" font-size="11.5" font-weight="700" fill="' + INK + '">¡Dale! Nos vemos ahí.</text>'),
+        '<text x="74" y="100" font-size="11.5" font-weight="700" fill="' + INK + '">' + L('¡Dale! Nos vemos ahí.', 'Great! See you there.') + '</text>'),
       // 4. A jugar: la pelota en movimiento y una celebración.
       svg('<g stroke="' + W + '" stroke-width="3" stroke-linecap="round"><path d="M56 58h26M46 72h32M58 86h22"/></g>' + ball(120, 72, 27) +
         spark(176, 40, OR) + spark(194, 92, BALL) + spark(66, 112, W) + spark(168, 112, OR)),
     ];
-  })();
+  };
   const introSteps = () => [
-    { t: 'Encuentra con quién jugar', p: '¿Tienes ganas de jugar y te falta con quién? En Peloteo te pones de acuerdo con otras personas de tu nivel para armar un partido. No necesitas crear una cuenta.' },
-    { t: 'Elige el día y la hora', p: 'Los bloques naranjos del inicio son partidos donde alguien busca jugador: súmate a uno. Si ninguno te acomoda, crea el tuyo eligiendo deporte, lugar, día y hora, y te avisamos cuando alguien se una.' },
-    { t: 'Pónganse de acuerdo', p: coord()
-      ? 'Cuando el partido se completa, les avisamos por correo y les compartimos el contacto de cada uno, para que se escriban y reserven la cancha con el club.'
-      : 'Cuando el partido se completa, les asignamos una cancha, les avisamos por correo y les compartimos el contacto de cada uno para que se escriban.' },
-    { t: '¡Listo, a jugar!', p: 'Solo queda llegar a la cancha y disfrutar. Si te surge algo, libera tu cupo desde «Mis partidos» hasta una hora antes, así otra persona puede tomarlo.' },
+    { t: L('Encuentra con quién jugar', 'Find someone to play with'), p: L('¿Tienes ganas de jugar y te falta con quién? En Peloteo te pones de acuerdo con otras personas de tu nivel para armar un partido. No necesitas crear una cuenta.',
+      'Want to play but have no one to play with? On Peloteo you team up with other people at your level to set up a match. No account needed.') },
+    { t: L('Elige el día y la hora', 'Pick the day and time'), p: L('Los bloques naranjos del inicio son partidos donde alguien busca jugador: súmate a uno. Si ninguno te acomoda, crea el tuyo eligiendo deporte, lugar, día y hora, y te avisamos cuando alguien se una.',
+      "The orange blocks on the home page are matches where someone is looking for a player: join one. If none suits you, create your own by picking the sport, place, day and time, and we'll let you know when someone joins.") },
+    { t: L('Pónganse de acuerdo', 'Get in touch'), p: coord()
+      ? L('Cuando el partido se completa, les avisamos por correo y les compartimos el contacto de cada uno, para que se escriban y reserven la cancha con el club.',
+        "When the match fills up, we email everyone and share each player's contact details so you can talk and book the court with the club.")
+      : L('Cuando el partido se completa, les asignamos una cancha, les avisamos por correo y les compartimos el contacto de cada uno para que se escriban.',
+        "When the match fills up, we assign a court, email everyone and share each player's contact details so you can talk.") },
+    { t: L('¡Listo, a jugar!', "All set, let's play!"), p: L('Solo queda llegar a la cancha y disfrutar. Si te surge algo, libera tu cupo desde «Mis partidos» hasta una hora antes, así otra persona puede tomarlo.',
+      'All that\'s left is to show up and enjoy. If something comes up, free your spot from “My matches” up to one hour before, so someone else can take it.') },
   ];
   let introStep = 0;
   function introRender(dlg) {
     const steps = introSteps(), st = steps[introStep], last = introStep === steps.length - 1;
     const keep = dlg.querySelector('input[name="intro_hide"]');
     const checked = keep ? keep.checked : false;
-    dlg.innerHTML = '<div class="art">' + ART[introStep] + '<button type="button" class="x" data-i="close" aria-label="Cerrar la guía">×</button></div>' +
-      '<div class="body"><p class="step">Paso ' + (introStep + 1) + ' de ' + steps.length + '</p>' +
+    dlg.innerHTML = '<div class="art">' + ART()[introStep] + '<button type="button" class="x" data-i="close" aria-label="' + L('Cerrar la guía', 'Close the guide') + '">×</button></div>' +
+      '<div class="body"><p class="step">' + L('Paso ', 'Step ') + (introStep + 1) + L(' de ', ' of ') + steps.length + '</p>' +
       '<h2 id="intro-t" tabindex="-1">' + esc(st.t) + '</h2><p id="intro-p">' + esc(st.p) + '</p>' +
-      (last ? '<label class="hide"><input type="checkbox" name="intro_hide"' + (checked ? ' checked' : '') + '>No volver a mostrar esta guía</label>' : '') +
+      (last ? '<label class="hide"><input type="checkbox" name="intro_hide"' + (checked ? ' checked' : '') + '>' + L('No volver a mostrar esta guía', "Don't show this guide again") + '</label>' : '') +
       '<div class="nav"><span class="dots" aria-hidden="true">' + steps.map((_, i) => '<i' + (i === introStep ? ' class="on"' : '') + '></i>').join('') + '</span>' +
-      (introStep ? '<button type="button" class="btn ghost sm" data-i="prev">Atrás</button>' : '<button type="button" class="btn ghost sm" data-i="close">Saltar</button>') +
-      '<button type="button" class="btn sm" data-i="' + (last ? 'done' : 'next') + '">' + (last ? '¡A jugar!' : 'Siguiente') + '</button></div></div>';
+      (introStep ? '<button type="button" class="btn ghost sm" data-i="prev">' + L('Atrás', 'Back') + '</button>' : '<button type="button" class="btn ghost sm" data-i="close">' + L('Saltar', 'Skip') + '</button>') +
+      '<button type="button" class="btn sm" data-i="' + (last ? 'done' : 'next') + '">' + (last ? L('¡A jugar!', "Let's play!") : L('Siguiente', 'Next')) + '</button></div></div>';
     const h = dlg.querySelector('#intro-t'); if (h) h.focus({ preventScroll: true });
   }
   function openIntro() {
@@ -793,8 +849,9 @@
   });
 
   (async function boot() {
+    saveLang(); // fija la cookie (el servidor responde los errores en ese idioma), lang y título
     const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
-    if (!today) { $('#app').innerHTML = '<div class="card"><h2>No pudimos cargar las canchas</h2><p class="muted">Revisa tu conexión y vuelve a intentarlo.</p><div class="actions"><button class="btn" onclick="location.reload()">Reintentar</button></div></div>'; return; }
+    if (!today) { $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
     S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
     if (!fromHash()) { S.view = 'home'; render(); maybeIntro(); }
     await loadMine(); render();
