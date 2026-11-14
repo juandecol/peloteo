@@ -184,7 +184,7 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
   - "Configuración" está en la barra superior (ícono de engranaje; el texto se oculta hasta 640 px), ya no al pie de la página.
 - **Idiomas (2026-11-14):** español e inglés en todo el sitio público.
   - Selector en la barra superior, al lado de Buscar: bandera de España con "ESP" y del Reino Unido (Union Jack) con "ENG" (SVG propios en `public/app.js`). Hasta 600 px la barra queda solo con íconos y el código va bajo la bandera; hasta 800 px "Buscar" y "Configuración" van solo con su ícono.
-  - El idioma elegido se guarda en la cookie `peloteo_lang` (`es`/`en`, 400 días, la escribe el navegador). Sin elección: inglés si el navegador está en inglés; si no, español.
+  - El idioma elegido se guarda en la cookie `peloteo_lang` (`es`/`en`, 400 días, la escribe el navegador). Sin elección, el sitio siempre se muestra en español (aunque el navegador esté en inglés): solo cambia cuando el jugador toca ENG (decidido el 2026-11-14).
   - Textos de la interfaz con `L('español', 'English')` en `public/app.js` (incluida la guía de bienvenida). Fechas en inglés: "Monday, November 16".
   - El servidor traduce los mensajes de error de `/api` según la cookie (`src/lib/i18n.ts`: `ERRORS_EN` y patrones). Toda frase de error nueva debe agregarse ahí; una prueba lo exige.
   - Nombres de deportes conocidos en inglés (`SPORTS_EN` en `src/lib/i18n.ts`, que llega en `GET /api/today` como `sport_names_en`); los lugares no se traducen. Las categorías usan `label_en` (se edita en el formulario del deporte del admin).

@@ -27,15 +27,15 @@
 
   // Idioma de la interfaz: español (por defecto) o inglés. Se elige con ESP/ENG en
   // la barra superior y se guarda en la cookie peloteo_lang (400 días), que el
-  // servidor usa para los mensajes de error. Sin elección: el idioma del navegador
-  // si es inglés; si no, español. L('texto', 'text') elige según el idioma.
+  // servidor usa para los mensajes de error. Sin elección, siempre español: el
+  // idioma solo cambia cuando el jugador toca ENG. L('texto', 'text') elige según el idioma.
   const LANG_COOKIE = 'peloteo_lang';
   const cookieLang = () => { const m = /(?:^|;\s*)peloteo_lang=(es|en)(?:;|$)/.exec(document.cookie); return m ? m[1] : null; };
-  const browserLang = () => { const l = ((navigator.languages && navigator.languages[0]) || navigator.language || '').toLowerCase(); return l.startsWith('en') ? 'en' : 'es'; };
-  let lang = cookieLang() || browserLang();
+  let lang = cookieLang() || 'es';
   const L = (es, en) => (lang === 'en' ? en : es);
-  function saveLang() {
-    document.cookie = LANG_COOKIE + '=' + lang + '; Max-Age=34560000; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+  // Aplica el idioma a la página; con remember, además lo guarda (solo al elegirlo el jugador).
+  function saveLang(remember) {
+    if (remember) document.cookie = LANG_COOKIE + '=' + lang + '; Max-Age=34560000; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
     document.documentElement.lang = lang === 'en' ? 'en' : 'es-CL';
     document.title = L('Peloteo, agenda de partidos', 'Peloteo, book a match');
   }
@@ -643,7 +643,7 @@
     intro() { openIntro(); },
     lang(d) {
       if (d.l === lang) return;
-      lang = d.l === 'en' ? 'en' : 'es'; saveLang(); lastKey = ''; render();
+      lang = d.l === 'en' ? 'en' : 'es'; saveLang(true); lastKey = ''; render();
       toast(L('Sitio en español.', 'Site in English.'));
     },
     async pickOpen(d) {
@@ -849,7 +849,7 @@
   });
 
   (async function boot() {
-    saveLang(); // fija la cookie (el servidor responde los errores en ese idioma), lang y título
+    saveLang(false); // lang y título de la página; la cookie solo se escribe al elegir idioma
     const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
     if (!today) { $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
     S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
