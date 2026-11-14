@@ -37,6 +37,7 @@
     err: '', confirm: null, affected: null, busy: false,
     // Segundo factor: estado, configuración en curso, códigos recién generados y formulario abierto.
     tfa: null, tfaSetup: null, tfaCodes: null, tfaMode: null, tfaErr: '', useRecovery: false,
+    settings: null, // ajustes del sitio (pestaña Opciones)
   };
 
   // ---------------- API ----------------
@@ -95,6 +96,8 @@
       const r = await api('GET', '/admin/api/games'); if (r.ok) S.games = r.data;
     } else if (v === 'security') {
       const r = await api('GET', '/admin/2fa'); if (r.ok) S.tfa = r.data;
+    } else if (v === 'options') {
+      const r = await api('GET', '/admin/api/settings'); if (r.ok) S.settings = r.data;
     }
   }
 
@@ -158,7 +161,7 @@
   function tabs() {
     const cur = (v) => (v === 'venues' ? ['venues', 'venue', 'venueForm', 'sport', 'sportForm', 'courtForm'].includes(S.view) : S.view === v);
     const tab = (v, t) => '<button type="button" data-a="go" data-v="' + v + '" aria-current="' + cur(v) + '">' + t + '</button>';
-    return '<h1 class="h">Configuración</h1><nav class="tabs" aria-label="Secciones">' + tab('venues', 'Lugares') + tab('games', 'Encuentros') + tab('security', 'Seguridad') + '<button type="button" data-a="logout">Salir</button></nav>';
+    return '<h1 class="h">Configuración</h1><nav class="tabs" aria-label="Secciones">' + tab('venues', 'Lugares') + tab('games', 'Encuentros') + tab('options', 'Opciones') + tab('security', 'Seguridad') + '<button type="button" data-a="logout">Salir</button></nav>';
   }
 
   function vVenues() {
@@ -327,6 +330,16 @@
       '<button type="button" class="btn danger sm" data-a="tfaMode" data-m="disable">Desactivar</button></div></div>';
   }
 
+  // Opciones del sitio público.
+  function vOptions() {
+    const st = S.settings;
+    if (!st) return '<p class="muted">Cargando…</p>';
+    return '<div class="card"><h2>Formulario de los jugadores</h2><form data-f="settings" novalidate>' +
+      '<div class="checks"><label><input type="checkbox" name="whatsapp_contact" value="1"' + (st.whatsapp_contact ? ' checked' : '') + '>Pedir el WhatsApp de los jugadores</label></div>' +
+      '<p class="small muted">Si está activo, el formulario para abrir o unirse a un partido muestra un campo opcional de WhatsApp, y en los partidos confirmados los compañeros pueden escribirse por WhatsApp. Si está apagado, el campo no aparece y el número no se guarda.</p>' +
+      errBox() + '<div class="actions"><button class="btn" type="submit">Guardar opciones</button></div></form></div>';
+  }
+
   function vSecurity() {
     const s = S.session || {};
     const on = S.tfa ? S.tfa.enabled : s.totp_enabled;
@@ -346,7 +359,7 @@
       case 'twofa': return vTwoFa();
       case 'mustChange': return vMustChange();
     }
-    const body = { venues: vVenues, venueForm: vVenueForm, venue: vVenue, sportForm: vSportForm, sport: vSport, courtForm: vCourtForm, games: vGames, security: vSecurity }[S.view];
+    const body = { venues: vVenues, venueForm: vVenueForm, venue: vVenue, sportForm: vSportForm, sport: vSport, courtForm: vCourtForm, games: vGames, options: vOptions, security: vSecurity }[S.view];
     return tabs() + (body ? body() : '');
   }
 
@@ -392,6 +405,11 @@
   }
 
   const submit = {
+    async settings(d) {
+      const r = await api('PUT', '/admin/api/settings', { whatsapp_contact: (d.whatsapp_contact || []).length > 0 });
+      if (!r.ok) { fail(r); return; }
+      S.settings = r.data; S.err = ''; render(); toast('Opciones guardadas.');
+    },
     async login(d) {
       if (!d.username || !d.password) { S.err = 'Escribe tu usuario y contraseña.'; render(); return; }
       S.busy = true; S.err = ''; render();

@@ -6,6 +6,11 @@
 (function () {
   'use strict';
 
+  // Campo WhatsApp del formulario: solo si el administrador activó "Pedir el
+  // WhatsApp de los jugadores" en Configuración › Opciones (llega en /api/today
+  // como whatsapp_contact). Si está apagado, el servidor además ignora el número.
+  const waField = () => !!(S.today && S.today.whatsapp_contact);
+
   // Avisos por WhatsApp (etapa 6, todavía no implementada): mientras sea false,
   // el formulario no muestra la casilla "Avísenme también por WhatsApp" y
   // siempre envía whatsapp_opt_in = false. El servidor, la base (players.whatsapp_opt_in)
@@ -301,8 +306,8 @@
         sport.categories.map((c) => '<label title="' + esc(c.label) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '" checked>Nivel ' + c.level + '</label>').join('') + '</div></fieldset>';
     }
     h += '<label class="f" for="email">Email de contacto</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="tu@correo.cl" value="' + esc(prefs.email || '') + '">' +
-      '<label class="f" for="wa">WhatsApp <small>(opcional)</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' +
-      (WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>Avísenme también por WhatsApp</label></div>' : '') +
+      (waField() ? '<label class="f" for="wa">WhatsApp <small>(opcional)</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' : '') +
+      (waField() && WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>Avísenme también por WhatsApp</label></div>' : '') +
       '<p class="small muted">Tu contacto solo se comparte con quienes jueguen contigo, cuando el partido se confirme.</p>' +
       errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? 'Enviando…' : g ? 'Unirme al partido' : 'Publicar partido') + '</button></div></form>';
     return h;
@@ -524,11 +529,11 @@
     if (S.err) { render(); return; }
 
     const key = 'lvl_' + sport.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    prefs = Object.assign({}, prefs, { initials: ini, email: d.email.trim(), whatsapp: d.whatsapp || '', whatsapp_opt_in: !!d.whatsapp_opt_in });
+    prefs = Object.assign({}, prefs, { initials: ini, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : prefs.whatsapp || '', whatsapp_opt_in: !!d.whatsapp_opt_in });
     prefs[key] = level;
     LS.set('peloteo_prefs', prefs);
 
-    const player = { initials: ini, level, email: d.email.trim(), whatsapp: d.whatsapp || '', whatsapp_opt_in: WHATSAPP_NOTICES && !!d.whatsapp_opt_in };
+    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in };
     S.busy = true; S.err = ''; render();
     const r = S.game
       ? await api('POST', '/api/games/' + encodeURIComponent(S.game.id) + '/join', { player })

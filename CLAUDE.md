@@ -61,6 +61,8 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **user_sessions**: `id` (SHA-256 del token), `user_id`, `expires_at`, `created_at`.
 - **players.user_id** (nulo sin cuenta). Índice único (`game_id`, `user_id`) cuando no es nulo: una cuenta no ocupa dos cupos del mismo encuentro.
 
+**settings** (ajustes del sitio, migración `0009`): `key`, `value` (texto; `"1"`/`"0"` para sí/no), `updated_at`. Hoy: `whatsapp_contact` (pedir el WhatsApp de los jugadores), apagado por defecto.
+
 **login_attempts** (intentos fallidos de login del administrador): `id`, `username`, `ip`, `created_at`. Se usa para aplicar el límite de intentos.
 
 **court_blocks** (bloqueos de canchas): `id` (prefijo `B-`), `court_id`, `date`, `start_time`, `end_time`, `reason` (opcional, por ejemplo "Reserva por teléfono"), `created_at`.
@@ -94,7 +96,9 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Cookie `visitor_id` aleatoria (`V-` + 32 caracteres hex), de 400 días (el máximo que aceptan los navegadores), `HttpOnly`, `Secure`, `SameSite=Lax`, creada por el servidor en la primera llamada a `/api`. Una cookie con formato inválido se reemplaza.
 - "Mis partidos" lista los encuentros de esa cookie de hoy en adelante, incluidos los cancelados por el administrador. Muestra el contacto de los compañeros solo si el encuentro está confirmado, y el botón de cancelar solo mientras falte al menos 1 hora.
 - El navegador recuerda iniciales, email, WhatsApp y nivel por deporte en `localStorage`, solo como comodidad.
-- **Aviso por WhatsApp oculto (2026-11-14):** el formulario no muestra la casilla "Avísenme también por WhatsApp" y envía `whatsapp_opt_in = false`, porque la etapa 6 no está implementada. Todo lo demás ya la soporta (base, servidor, perfil de cuentas). Para mostrarla: `WHATSAPP_NOTICES = true` al inicio de `public/app.js`. El campo WhatsApp sigue visible: se usa para el enlace `wa.me` entre compañeros confirmados.
+- **WhatsApp oculto (2026-11-14):**
+  - El campo WhatsApp del formulario solo aparece si el administrador activa "Pedir el WhatsApp de los jugadores" en Configuración › Opciones (ajuste `whatsapp_contact`, que llega al sitio en `GET /api/today`). Apagado (por defecto), el servidor además descarta el número y el aviso aunque lleguen. Activado, el número se usa para el enlace `wa.me` entre compañeros confirmados.
+  - La casilla "Avísenme también por WhatsApp" sigue oculta aunque el campo esté activo, porque la etapa 6 no está implementada; se muestra con `WHATSAPP_NOTICES = true` al inicio de `public/app.js` (y el campo activo). La base, el servidor y el perfil de cuentas ya la soportan.
 - **Cuentas opcionales (preparadas, desactivadas; decidido el 2026-11-14):** el sitio sigue funcionando sin registro. Con `ACCOUNTS_ENABLED = "1"` (variable de `wrangler.jsonc`, hoy ausente) se activan:
   - Ingreso con un enlace de un solo uso enviado al correo (`https://peloteo.cl/#entrar=<token>`), sin contraseñas; vence en 15 minutos; máximo 3 enlaces por correo cada 15 minutos.
   - Al entrar se crea la cuenta si no existía y pasan a ella los cupos de ese navegador y los anotados con ese correo (uno por encuentro). Desde ahí se ven en todos los dispositivos.
@@ -143,6 +147,7 @@ Públicas:
 - Errores: JSON `{ error, code, field }` con 400 (datos), 404 (no existe) o 409 (turno ocupado, partido completo, ya inscrito, cancelado).
 
 Administración (requieren sesión): `POST /admin/login`, `POST /admin/login/2fa`, `POST /admin/logout`, y CRUD bajo `/admin/api/venues`, `/sports`, `/courts`, `/games`.
+- Opciones del sitio: `GET` y `PUT /admin/api/settings` (`{ whatsapp_contact }`); valores inválidos se ignoran.
 - También: `GET /admin/session` (estado de la sesión para la interfaz), `POST /admin/password` (cambio de contraseña, permitido aunque `must_change_password` esté activo), `GET /admin/api/meta` (listas para los formularios) y `POST /admin/api/games/:id/cancel`.
 - Segundo factor (sesión completa y contraseña ya cambiada): `GET /admin/2fa` (estado y códigos de respaldo restantes), `POST /admin/2fa/setup`, `POST /admin/2fa/enable` `{ code }`, `POST /admin/2fa/disable` `{ password, code }` y `POST /admin/2fa/recovery-codes` `{ code }`. Errores: 400 código o contraseña incorrectos, 409 estado inválido, 429 bloqueado.
 - Bloqueos: `GET` y `POST /admin/api/courts/:id/blocks` (el POST responde 409 si hay encuentros confirmados afectados; se repite con `?confirm=1`) y `DELETE /admin/api/blocks/:id`.
@@ -280,4 +285,4 @@ Decididas (2026-11-12):
 - Cuentas de jugadores (2026-11-14): opcionales, ingreso por enlace al correo, los partidos previos pasan a la cuenta. Preparadas (migración `0006`, lógica, rutas y pruebas) pero desactivadas hasta construir su interfaz.
 - Deportes (2026-11-14): al inicio solo tenis; siempre se eligen en un menú desplegable.
 - Canchas (2026-11-14): modo coordinación; solo se muestran deporte, lugar y hora; las horas salen del horario del club; a una misma hora, como máximo tantos confirmados como canchas; al completarse se confirma sin cancha y los jugadores la reservan con el club (migración `0007`). La lógica de reserva queda lista para cuando haya conexión con el club.
-- Aviso por WhatsApp (2026-11-14): oculto hasta implementar la etapa 6 (`WHATSAPP_NOTICES` en `public/app.js`).
+- WhatsApp (2026-11-14): el campo del número se activa solo desde Configuración › Opciones (apagado por defecto, migración `0009`); el aviso por WhatsApp sigue oculto hasta implementar la etapa 6 (`WHATSAPP_NOTICES` en `public/app.js`).

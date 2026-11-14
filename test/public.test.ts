@@ -153,7 +153,7 @@ test("disponibilidad: resumen del mes y turnos del día", async () => {
   const a = w.browser();
   const today = (await a.req("GET", "/api/today")).json;
   // Sin COURT_MODE en el entorno, el modo es "reserva".
-  assert.deepEqual(today, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva" });
+  assert.deepEqual(today, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva", whatsapp_contact: false });
   const month = (await a.req("GET", "/api/availability?sport_id=D-TEN01&month=2026-11")).json;
   assert.equal(month.days[0].date, "2026-11-16");
   const day = (await a.req("GET", `/api/availability?sport_id=D-TEN01&date=${DAY}`)).json;
@@ -168,6 +168,7 @@ test("disponibilidad: resumen del mes y turnos del día", async () => {
 
 test("flujo: abrir, otro jugador se une, se asigna cancha y ambos ven el contacto del otro", async () => {
   const w = world();
+  w.db.exec("UPDATE settings SET value = '1' WHERE key = 'whatsapp_contact'"); // pedir WhatsApp (Configuración › Opciones)
   const a = w.browser();
   const b = w.browser();
   const c = w.browser();
@@ -374,4 +375,26 @@ test("inicio: un turno pasado (más de 15 minutos) ya no aparece", async () => {
   w.at("2026-11-17T21:20:00Z"); // martes 18:20: ya no
   assert.equal((await b.req("GET", "/api/open")).json[0].pm, 0);
   assert.deepEqual((await b.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json, []);
+});
+
+// ---------------------------------------------------------------
+// Opciones: pedir el WhatsApp de los jugadores (Configuración)
+// ---------------------------------------------------------------
+
+test("opciones: el WhatsApp se pide solo si el administrador lo activa; si no, se ignora", async () => {
+  const w = world();
+  const a = w.browser();
+  // Apagado por defecto: /today lo informa y el servidor descarta el número y el aviso.
+  assert.equal((await a.req("GET", "/api/today")).json.whatsapp_contact, false);
+  const g = (await a.req("POST", "/api/games", openTenis("MT", { player: player("MT", 3, { whatsapp: "+56 9 1111 2222", whatsapp_opt_in: true }) }))).json.game;
+  assert.deepEqual(
+    { ...w.db.get("SELECT whatsapp, whatsapp_opt_in FROM players WHERE game_id = ?", g.id) },
+    { whatsapp: null, whatsapp_opt_in: 0 },
+  );
+  // Activado: se guarda.
+  w.db.exec("UPDATE settings SET value = '1' WHERE key = 'whatsapp_contact'");
+  assert.equal((await w.browser().req("GET", "/api/today")).json.whatsapp_contact, true);
+  const b = w.browser();
+  await b.req("POST", `/api/games/${g.id}/join`, { player: player("RS", 3, { whatsapp: "+56 9 3333 4444" }) });
+  assert.equal(w.db.get<{ whatsapp: string }>("SELECT whatsapp FROM players WHERE initials = 'RS'")!.whatsapp, "+56933334444");
 });

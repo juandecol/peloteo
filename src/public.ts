@@ -19,6 +19,7 @@ import {
   type PlayerInput,
 } from "./lib/matching.ts";
 import { sendMail, sendNotices, siteFor } from "./notices.ts";
+import { getSettings } from "./lib/settings.ts";
 import {
   AccountError,
   getProfile,
@@ -120,10 +121,24 @@ export function publicRoutes(options: AppOptions = {}) {
   });
 
   /** Fecha de hoy y último día agendable, para que la interfaz arme el calendario. */
-  app.get("/today", (c) => {
+  app.get("/today", async (c) => {
     const now = today(c);
-    return c.json({ date: now.date, minutes: now.minutes, last_bookable: lastBookableDate(now), court_mode: mode(c) });
+    const settings = await getSettings(c.env.DB);
+    return c.json({
+      date: now.date,
+      minutes: now.minutes,
+      last_bookable: lastBookableDate(now),
+      court_mode: mode(c),
+      whatsapp_contact: settings.whatsapp_contact,
+    });
   });
+
+  /** Datos del jugador; sin el ajuste "pedir WhatsApp", se descartan el número y el aviso. */
+  async function playerInput(c: Ctx, raw: unknown): Promise<PlayerInput> {
+    const p = (raw && typeof raw === "object" ? raw : {}) as PlayerInput;
+    if ((await getSettings(c.env.DB)).whatsapp_contact) return p;
+    return { ...p, whatsapp: null, whatsapp_opt_in: false };
+  }
 
   app.get("/sports", async (c) => c.json(await listSportGroups(c.env.DB)));
 
@@ -173,7 +188,7 @@ export function publicRoutes(options: AppOptions = {}) {
         time: body.time,
         capacity: body.capacity,
         accepted_levels: body.accepted_levels,
-        player: (body.player ?? {}) as PlayerInput,
+        player: await playerInput(c, body.player),
       },
       c.get("who"),
       today(c),
@@ -185,7 +200,7 @@ export function publicRoutes(options: AppOptions = {}) {
 
   app.post("/games/:id/join", async (c) => {
     const body = await readJson(c);
-    const r = await joinGame(c.env.DB, c.req.param("id"), (body.player ?? {}) as PlayerInput, c.get("who"), today(c), mode(c));
+    const r = await joinGame(c.env.DB, c.req.param("id"), await playerInput(c, body.player), c.get("who"), today(c), mode(c));
     await sendNotices(c, r.notices, today(c), options);
     return c.json({ game: await getMyGame(c.env.DB, r.game.id, c.get("who"), today(c)) });
   });

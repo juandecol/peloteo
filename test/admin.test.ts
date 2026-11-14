@@ -544,3 +544,18 @@ test("bloqueos: no afectan encuentros de otras canchas, otros días ni otros hor
   // Bloquear la cancha 3 (en mantención, sin encuentros) tampoco pide confirmación.
   assert.equal((await t.req("POST", "/admin/api/courts/C-T3SM3/blocks", { date: "2026-11-17", start_time: "18:00", end_time: "19:00" })).status, 201);
 });
+
+// ---------------------------------------------------------------
+// Opciones del sitio
+// ---------------------------------------------------------------
+
+test("opciones: pedir WhatsApp se activa y desactiva desde Configuración; requiere sesión", async () => {
+  const anon = setup();
+  assert.equal((await anon.req("GET", "/admin/api/settings")).status, 401);
+  const t = await ready();
+  assert.deepEqual((await t.req("GET", "/admin/api/settings")).json, { whatsapp_contact: false });
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: true })).json, { whatsapp_contact: true });
+  // Valores inválidos se ignoran.
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: "si" })).json, { whatsapp_contact: true });
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: false })).json, { whatsapp_contact: false });
+});

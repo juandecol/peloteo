@@ -52,6 +52,7 @@ import type { Db } from "./lib/db.ts";
 import type { Channel } from "./lib/notify.ts";
 import type { Email } from "./lib/email.ts";
 import { sendNotices } from "./notices.ts";
+import { getSettings, updateSettings } from "./lib/settings.ts";
 import { localNow } from "./lib/time.ts";
 
 export const SESSION_COOKIE = "peloteo_admin";
@@ -322,6 +323,10 @@ export function adminRoutes(options: AppOptions = {}) {
   }
 
   api.get("/meta", (c) => c.json({ surfaces: SURFACES }));
+
+  // Ajustes del sitio (por ahora: pedir el WhatsApp de los jugadores).
+  api.get("/settings", async (c) => c.json(await getSettings(c.env.DB)));
+  api.put("/settings", async (c) => c.json(await updateSettings(c.env.DB, await readJson(c))));
 
   api.get("/venues", async (c) => c.json(await listVenues(c.env.DB)));
   api.post("/venues", async (c) => c.json(await createVenue(c.env.DB, await readJson(c)), 201));
