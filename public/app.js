@@ -552,12 +552,16 @@
     }
     if (S.field) { const el = app.querySelector('[name="' + S.field + '"]'); if (el) el.focus(); S.field = ''; }
     const n = activeMine();
+    // Textos de la barra con ancho fijo: se dibujan ambos idiomas en la misma celda y
+    // el inactivo queda invisible, así el botón mide lo que el texto más largo y
+    // nada se corre al cambiar de idioma.
+    const both = (es, en) => '<span class="both"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>' + es + '</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>' + en + '</span></span>';
     const langBtn = (l, code, name) => '<button type="button" data-a="lang" data-l="' + l + '" lang="' + l + '" aria-pressed="' + (lang === l) + '" aria-label="' + name + '" title="' + name + '">' + FLAGS[l] + '<span>' + code + '</span></button>';
     $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="' + L('Peloteo, ir al inicio', 'Peloteo, go to home') + '" width="648" height="120"></button><nav aria-label="' + L('Principal', 'Main') + '">' +
-      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">' + L('Buscar', 'Search') + '</span></button>' +
+      '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">' + both('Buscar', 'Search') + '</span></button>' +
       '<span class="langs" role="group" aria-label="Idioma / Language">' + langBtn('es', 'ESP', 'Español') + langBtn('en', 'ENG', 'English') + '</span>' +
-      '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">' + icon('mis', 18) + '<span class="lbl">' + L('Mis partidos', 'My matches') + '</span>' + (n ? '<b aria-label="' + n + L(' activos', ' active') + '">' + n + '</b>' : '') + '</button>' +
-      '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">' + L('Configuración', 'Settings') + '</span></a></nav>';
+      '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">' + icon('mis', 18) + '<span class="lbl">' + both('Mis partidos', 'My matches') + '</span>' + (n ? '<b aria-label="' + n + L(' activos', ' active') + '">' + n + '</b>' : '') + '</button>' +
+      '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">' + both('Configuración', 'Settings') + '</span></a></nav>';
   }
 
   // ---------------- formularios ----------------

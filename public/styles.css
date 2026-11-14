@@ -382,3 +382,8 @@ html[lang="en"] .day8.today .dl{font-size:.58rem;letter-spacing:0}
 /* Alto fijo de la etiqueta del día: "TODAY" usa letra más chica, pero no debe
    acortar su columna (los bloques AM/PM de hoy quedaban 2-3 px más arriba). */
 .day8 .dl{line-height:calc(.7rem * 1.45)}
+/* Textos de la barra en ambos idiomas superpuestos (el inactivo, invisible): el
+   ancho no cambia al pasar de ESP a ENG. */
+.both{display:inline-grid;justify-items:center}
+.both > span{grid-area:1/1}
+.both > .off{visibility:hidden}
