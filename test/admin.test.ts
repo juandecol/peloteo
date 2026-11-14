@@ -5,6 +5,7 @@ import { getDayAvailability } from "../src/lib/availability.ts";
 import { createGame, joinGame, MatchError } from "../src/lib/matching.ts";
 import { hashPassword, verifyPassword } from "../src/lib/auth.ts";
 import { localNow } from "../src/lib/time.ts";
+import { listSportGroups } from "../src/lib/public.ts";
 import { emptyGamesDb, TestDb } from "./helpers/db.ts";
 
 // Lunes 16 de noviembre de 2026, 10:00 en Santiago (UTC-3).
@@ -322,6 +323,40 @@ test("configuración: editar deporte reemplaza sus categorías", async () => {
   assert.equal(r.status, 200);
   assert.deepEqual(r.json.categories, ["Uno", "Dos", "", "", ""]);
   assert.equal(t.db.count("SELECT count(*) AS n FROM categories WHERE sport_id = 'D-TEN01'"), 2);
+});
+
+test("configuración: un deporte se muestra a los jugadores solo si está visible y tiene canchas operativas", async () => {
+  const t = await ready();
+  const names = async () => (await listSportGroups(t.db)).map((g) => g.name);
+  const s = await t.req("POST", "/admin/api/sports", { venue_id: "L-SM001", name: "Squash", match_sizes: [2], categories: ["Pro"] });
+  assert.equal(s.status, 201);
+  assert.equal(s.json.visible, true);
+  assert.equal(s.json.active_courts, 0);
+  // Visible pero sin canchas: no aparece, porque no hay horario del que salgan las horas.
+  assert.ok(!(await names()).includes("Squash"));
+
+  const c = await t.req("POST", "/admin/api/courts", { ...COURT, sport_id: s.json.id });
+  assert.equal(c.status, 201);
+  assert.equal((await t.req("GET", "/admin/api/sports/" + s.json.id)).json.active_courts, 1);
+  assert.ok((await names()).includes("Squash"));
+
+  // Editar sin el campo no cambia la visibilidad; ocultarlo lo saca del sitio.
+  const same = await t.req("PUT", "/admin/api/sports/" + s.json.id, { name: "Squash", match_sizes: [2], categories: ["Pro"] });
+  assert.equal(same.json.visible, true);
+  const hidden = await t.req("PUT", "/admin/api/sports/" + s.json.id, { name: "Squash", match_sizes: [2], categories: ["Pro"], visible: false });
+  assert.equal(hidden.json.visible, false);
+  assert.ok(!(await names()).includes("Squash"));
+
+  // Oculto no admite partidos nuevos.
+  const player = { initials: "AB", level: 1, email: "ab@example.com" };
+  await assert.rejects(
+    createGame(t.db, { sport_id: s.json.id, capacity: 2, date: "2026-11-17", time: "08:00", accepted_levels: [1], player }, "V-1", t.now),
+    (e: unknown) => e instanceof MatchError && e.code === "deporte_no_existe",
+  );
+
+  // Creado oculto desde el principio.
+  const pre = await t.req("POST", "/admin/api/sports", { venue_id: "L-SM001", name: "Básquetbol", match_sizes: [4], categories: ["Pro"], visible: false });
+  assert.equal(pre.json.visible, false);
 });
 
 // ---------------------------------------------------------------

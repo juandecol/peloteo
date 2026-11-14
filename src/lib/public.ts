@@ -35,7 +35,7 @@ interface SportRow {
   courts: number;
 }
 
-/** Deportes vigentes con al menos una cancha operativa. */
+/** Deportes vigentes, visibles para los jugadores y con al menos una cancha operativa. */
 async function activeSports(db: Db): Promise<SportRow[]> {
   const { results } = await db
     .prepare(
@@ -43,7 +43,7 @@ async function activeSports(db: Db): Promise<SportRow[]> {
               (SELECT count(*) FROM courts c
                WHERE c.sport_id = s.id AND c.deleted_at IS NULL AND c.status = 'operativa') AS courts
        FROM sports s JOIN venues v ON v.id = s.venue_id
-       WHERE s.deleted_at IS NULL AND v.deleted_at IS NULL
+       WHERE s.deleted_at IS NULL AND s.visible = 1 AND v.deleted_at IS NULL
        ORDER BY s.name, v.name`,
     )
     .all<SportRow>();

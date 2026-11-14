@@ -39,6 +39,12 @@ test("migraciones 0002 y 0008: match_sizes; pádel y tenis admiten singles (2) o
   assert.throws(() => db.exec("UPDATE sports SET match_sizes = '3' WHERE id = 'D-TEN01'"), /CHECK constraint failed/);
 });
 
+test("migración 0010: los deportes existentes quedan visibles y visible solo admite 0 o 1", () => {
+  const db = new TestDb();
+  assert.equal(db.count("SELECT count(*) AS n FROM sports WHERE visible <> 1"), 0);
+  assert.throws(() => db.exec("UPDATE sports SET visible = 2 WHERE id = 'D-TEN01'"), /CHECK constraint failed/);
+});
+
 test("migración 0002: borrar un encuentro sigue borrando sus jugadores en cascada", () => {
   const db = new TestDb();
   db.exec("DELETE FROM games WHERE id = 'E-DEMO3'");

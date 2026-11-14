@@ -35,7 +35,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **venues** (lugares): `id`, `name`, `address`, `maps_url`, `created_at`.
 
-**sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; tenis y pádel `"2,4"`: singles o dobles, migración `0008`), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
+**sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; tenis y pádel `"2,4"`: singles o dobles, migración `0008`), `visible` (1/0, migración `0010`: si se ofrece a los jugadores; por defecto sí), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
 
 **categories**: `sport_id`, `level` (1 a 5), `label`. Máximo 5 por deporte. El nivel 1 es avanzado y el 5 principiante. El texto es libre y puede ser amable o gracioso, por ejemplo "Estoy entrenando para Wimbledon" o "Apenas logro pasar la pelota".
 
@@ -122,6 +122,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
   - Desactivar pide contraseña y un código (de la app o de respaldo); borra la clave y los códigos y cierra las demás sesiones. Renovar los códigos de respaldo pide un código de la app.
   - La clave TOTP se guarda en D1 en texto (D1 cifra en reposo); quien lea la base podría generar códigos, pero igual necesitaría la contraseña.
   - Recuperación de último recurso (sin teléfono ni códigos): `npx wrangler d1 execute peloteo --remote --command "UPDATE admins SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL WHERE username = 'admin'; DELETE FROM admin_recovery_codes; DELETE FROM sessions;"`
+- **Deporte visible (2026-11-14):** casilla "Visible para los jugadores" en el formulario del deporte (marcada por defecto). El admin muestra el estado de cada deporte: "Visible", "Oculto" o "Sin canchas" (visible pero sin canchas operativas, así que aún no aparece). Un deporte oculto no aparece en el sitio ni admite partidos nuevos; los ya abiertos siguen su curso. Editar sin el campo no cambia la visibilidad.
 - Módulo de configuración: crear, editar y eliminar lugares; dentro de cada lugar, deportes con sus categorías; dentro de cada deporte, canchas con sus características y horarios. Lista de encuentros con opción de cancelar (pasan a `cancelado`). Dentro de cada cancha, sus bloqueos: crear, ver (de hoy en adelante) y quitar.
 - Eliminar un lugar, deporte o cancha con encuentros futuros debe pedir confirmación; esos encuentros pasan a `cancelado` y se avisa a los jugadores afectados.
 - **Sin sobrescribir lo agendado:** se bloquea cualquier cambio a una cancha que afecte turnos con encuentros futuros confirmados en esa cancha (horario, duración del turno, días, rango de fechas, estado). Para hacerlo, el administrador primero cancela esos encuentros.
@@ -176,7 +177,7 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 ## Interfaz
 
 - **Inicio (2026-11-14):** foto con "¿JUGAMOS?"; debajo, la tarjeta "¿Buscas con quién jugar?" con un calendario horizontal de 8 días (hoy incluido), cada día con un bloque AM (antes de las 12:00) y uno PM. El bloque es blanco si nadie busca jugadores y naranjo (`#EE8A24`) si hay partidos `abierto` con cupo en turno vigente (sin filtrar por nivel y sin contar los del propio visitante). Debajo, la tarjeta blanca "Crea un partido" con el desplegable de deportes.
-  - **Deportes siempre en un menú desplegable** (portada, crear en un bloque y búsqueda). Al inicio el sitio será solo de tenis, pero queda listo para sumar otros: el desplegable muestra los deportes que tengan canchas operativas. Por defecto elige el último usado en ese navegador; si no, tenis.
+  - **Deportes siempre en un menú desplegable** (portada, crear en un bloque y búsqueda). Al inicio el sitio será solo de tenis, pero queda listo para sumar otros: el desplegable muestra los deportes marcados "Visible para los jugadores" que tengan al menos una cancha operativa (de su horario salen las horas). Por defecto elige el último usado en ese navegador; si no, tenis.
   - AM y PM de cada día se ven como una sola pieza: esquinas redondeadas solo arriba de AM y abajo de PM, rectas al medio y separadas por 2 px.
   - Al tocar un bloque se abre la lista de sus partidos (hora, deporte y lugar, niveles, cupos, quiénes juegan) con "Unirme" (va al formulario; el servidor valida el nivel) y, debajo, la opción de crear un partido: se elige el deporte y el calendario abre en ese día. Desde AM se ofrece el día completo (mañana y tarde); desde PM, solo la tarde ("Ver todo el día" quita ese filtro). Si el día es hoy, solo se ofrecen horas que aún no comienzan.
   - "Configuración" está en la barra superior (ícono de engranaje; el texto se oculta hasta 640 px), ya no al pie de la página.
@@ -224,7 +225,7 @@ npm run check        # genera tipos (wrangler types) y revisa con tsc
 - Las pruebas usan el runner de Node (`node --test`) y SQLite incorporado (`node:sqlite`), sin dependencias extra. `test/helpers/db.ts` imita la API de D1 (incluido `batch` transaccional) y aplica las migraciones reales.
 - Los imports entre archivos TypeScript llevan extensión `.ts` para que Node los ejecute directamente. `tsc` revisa `src/`; las pruebas no se revisan con `tsc` (no hay tipos de Node instalados).
 
-- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0009`.
+- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0010`.
 - La base local se identifica por el `database_id`: si cambia, queda una base local vacía y hay que volver a `npm run db:migrate`.
 - Despliegue: automático con Workers Builds en cada push a `main` (aparece como check "Workers Builds: peloteo" en GitHub). Hacer push equivale a desplegar en producción. Despliegue manual: `npx wrangler deploy`. Dirección pública: https://peloteo.cl (también responde https://peloteo.peloteo.workers.dev).
 - Las migraciones no se aplican solas: aplicar las nuevas a la base remota antes del push que trae el código que las necesita.

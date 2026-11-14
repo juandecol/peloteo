@@ -161,11 +161,12 @@ interface SportRow {
   id: string;
   venue_id: string;
   match_sizes: string;
+  visible: number;
 }
 
 async function loadSport(db: Db, sportId: string): Promise<SportRow> {
   const sport = await db
-    .prepare("SELECT id, venue_id, match_sizes FROM sports WHERE id = ? AND deleted_at IS NULL")
+    .prepare("SELECT id, venue_id, match_sizes, visible FROM sports WHERE id = ? AND deleted_at IS NULL")
     .bind(sportId)
     .first<SportRow>();
   if (!sport) throw new MatchError("deporte_no_existe", "Ese deporte ya no está disponible.");
@@ -329,6 +330,8 @@ export async function createGame(
 ): Promise<JoinResult> {
   const sportId = typeof input.sport_id === "string" ? input.sport_id : "";
   const sport = await loadSport(db, sportId);
+  // Un deporte oculto no admite partidos nuevos; los ya abiertos siguen su curso.
+  if (sport.visible !== 1) throw new MatchError("deporte_no_existe", "Ese deporte ya no está disponible.");
   const sportLevels = await loadLevels(db, sport.id);
   const player = validatePlayer(input.player, sportLevels);
   const capacity = validateCapacity(input.capacity, parseIntList(sport.match_sizes, 2, 4));

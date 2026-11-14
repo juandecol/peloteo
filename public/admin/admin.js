@@ -189,10 +189,15 @@
       '<div class="actions"><button type="button" class="btn ghost sm" data-a="go" data-v="venueForm">Editar lugar</button></div></div><h3>Deportes en este lugar</h3>';
     h += S.sports.length ? '<ul class="list">' + S.sports.map((s) => {
       const nc = s.categories.filter(Boolean).length;
-      return '<li><button type="button" class="row" data-a="go" data-v="sport" data-sport="' + esc(s.id) + '"><span><span class="name">' + esc(s.name) + '</span><span class="meta">ID ' + esc(s.id) + '. ' + plural(nc, 'categoría', 'categorías') + ', ' + plural(s.courts, 'cancha', 'canchas') + '</span></span><span class="go">Abrir</span></button></li>';
+      return '<li><button type="button" class="row" data-a="go" data-v="sport" data-sport="' + esc(s.id) + '"><span><span class="name">' + esc(s.name) + ' ' + sportState(s).tag + '</span><span class="meta">ID ' + esc(s.id) + '. ' + plural(nc, 'categoría', 'categorías') + ', ' + plural(s.courts, 'cancha', 'canchas') + '</span></span><span class="go">Abrir</span></button></li>';
     }).join('') + '</ul>' : '<p class="muted">Aún no hay deportes en este lugar.</p>';
     return h + '<div class="actions"><button type="button" class="btn" data-a="go" data-v="sportForm" data-sport="">Agregar deporte</button></div>';
   }
+
+  // Si el deporte aparece en el sitio público y, si no, por qué.
+  const sportState = (s) => !s.visible ? { tag: '<span class="tag off">Oculto</span>', why: 'Oculto para los jugadores: no aparece en el sitio.' }
+    : !s.active_courts ? { tag: '<span class="tag off">Sin canchas</span>', why: 'Aún no aparece en el sitio: agrega al menos una cancha operativa, porque de su horario salen las horas que se ofrecen.' }
+    : { tag: '<span class="tag ok">Visible</span>', why: 'Visible para los jugadores.' };
 
   const sizesText = (sizes) => sizes.map((n) => n + (n === 2 ? ' (singles)' : ' (dobles)')).join(' o ') + ' jugadores';
 
@@ -204,6 +209,8 @@
       '<label class="f" for="sn">Nombre del deporte</label><input id="sn" name="name" type="text" maxlength="40" placeholder="Tenis" value="' + esc(sp ? sp.name : '') + '" required>' +
       '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Jugadores por partido <small class="muted" style="font-weight:400">(quien abre el partido elige entre las marcadas)</small></legend><div class="checks">' +
       [2, 4].map((n) => '<label><input type="checkbox" name="match_sizes" value="' + n + '"' + (sizes.includes(n) ? ' checked' : '') + '>' + n + (n === 2 ? ' (singles)' : ' (dobles)') + '</label>').join('') + '</div></fieldset>' +
+      '<div class="checks"><label><input type="checkbox" name="visible" value="1"' + (!sp || sp.visible ? ' checked' : '') + '>Visible para los jugadores</label></div>' +
+      '<p class="small muted">Desmárcalo para preparar el deporte sin que aparezca en el sitio. Aunque esté marcado, solo aparece cuando tiene al menos una cancha operativa.</p>' +
       '<h3>Categorías <span class="muted small">(1 avanzado, 5 principiante; deja en blanco las que no uses)</span></h3>' +
       [1, 2, 3, 4, 5].map((n) => '<label class="f" for="c' + n + '">Categoría ' + n + '</label><input id="c' + n + '" name="c' + n + '" type="text" maxlength="60" placeholder="' + (n === 1 ? 'Estoy entrenando para Wimbledon' : n === 5 ? 'Apenas logro pasar la pelota' : 'Texto para el nivel ' + n) + '" value="' + esc(cats[n - 1] || '') + '">').join('') +
       errBox() + affectedBox('delConfirm') + '<div class="actions"><button class="btn" type="submit">Guardar deporte</button>' + (sp ? delBtn('sport', 'Eliminar deporte') : '') + '</div></form>';
@@ -213,7 +220,7 @@
     const sp = S.sport, ve = S.venue;
     if (!sp) return '<p>Ese deporte ya no existe.</p>';
     let h = crumbs([{ t: 'Lugares', go: 'venues' }, { t: ve ? ve.name : 'Lugar', go: 'venue' }, { t: sp.name }]) +
-      '<div class="card"><h2>' + esc(sp.name) + '</h2><p class="id">ID ' + esc(sp.id) + '</p><p>' + sizesText(sp.match_sizes) + ' por partido</p>' +
+      '<div class="card"><h2>' + esc(sp.name) + ' ' + sportState(sp).tag + '</h2><p class="id">ID ' + esc(sp.id) + '</p><p>' + esc(sportState(sp).why) + '</p><p>' + sizesText(sp.match_sizes) + ' por partido</p>' +
       '<dl class="kv">' + sp.categories.map((c, i) => (c ? '<dt>Nivel ' + (i + 1) + '</dt><dd>' + esc(c) + '</dd>' : '')).join('') + '</dl>' +
       '<div class="actions"><button type="button" class="btn ghost sm" data-a="go" data-v="sportForm">Editar deporte y categorías</button></div></div><h3>Canchas</h3>';
     h += S.courts.length ? '<ul class="list">' + S.courts.map((c) =>
@@ -467,7 +474,7 @@
       toast('Lugar guardado.'); S.venue = r.data; await go('venue', { venueId: r.data.id });
     },
     async sport(d) {
-      const body = { name: d.name, match_sizes: d.match_sizes || [], categories: [1, 2, 3, 4, 5].map((n) => d['c' + n] || ''), venue_id: S.venueId };
+      const body = { name: d.name, match_sizes: d.match_sizes || [], visible: (d.visible || []).length > 0, categories: [1, 2, 3, 4, 5].map((n) => d['c' + n] || ''), venue_id: S.venueId };
       const r = S.sportId ? await api('PUT', '/admin/api/sports/' + S.sportId, body) : await api('POST', '/admin/api/sports', body);
       if (!r.ok) { fail(r); return; }
       toast('Deporte guardado.'); await go('sport', { sportId: r.data.id });
