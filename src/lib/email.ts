@@ -11,6 +11,8 @@ import type { Channel, NoticeEvent, NoticeGame, NoticePlayer, SuggestedSlot } fr
 import { parseIntList } from "./availability.ts";
 import { dayOfWeek } from "./time.ts";
 
+const RESEND_URL = "https://api.resend.com/emails";
+
 export interface Email {
   subject: string;
   text: string;
@@ -135,6 +137,8 @@ ${body}
 /** Arma el correo de un evento para un jugador. `site` es la dirección pública, sin "/" final. */
 export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: NoticeGame, site: string): Email {
   const cuando = `${fechaLarga(game.date)} a las ${game.time}`;
+  // Coordinación: Peloteo no asigna cancha; los jugadores la reservan con el club.
+  const coord = game.court_mode === "coordinacion";
   const missing = Math.max(0, game.capacity - game.players.length);
   const others = game.players.filter((p) => p.id !== player.id);
   const quienes = (ps: NoticePlayer[]) => ps.map((p) => `${p.initials} (nivel ${p.level})`).join(", ");
@@ -167,7 +171,11 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
       subject = `Tu partido de ${game.sport_name} está publicado`;
       title = "Partido publicado";
       blocks = [
-        { p: `Publicamos tu partido. Cuando se complete, le asignamos la primera cancha libre de ese turno y te avisamos.` },
+        {
+          p: coord
+            ? "Publicamos tu partido. Cuando se complete, te avisamos y te pasamos el contacto de tus compañeros para que reserven la cancha con el club."
+            : "Publicamos tu partido. Cuando se complete, le asignamos la primera cancha libre de ese turno y te avisamos.",
+        },
         { kv: [...base, ["Busca", `${faltan(missing)}, ${nivelesTexto(parseIntList(game.accepted_levels, 1, 5))}`]] },
         cancelBlock,
       ];
@@ -194,8 +202,12 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
         (game.court_notes ? `. ${game.court_notes}` : "");
       const saludo = `Hola, soy ${player.initials}. Jugamos ${game.sport_name} por Peloteo el ${cuando} en ${game.venue_name}.`;
       blocks = [
-        { p: "Ya tienen cancha asignada. Estos son los datos del partido." },
-        { kv: [...base, ["Cancha", cancha], ["Juegan", quienes(game.players)]] },
+        {
+          p: game.court_name
+            ? "Ya tienen cancha asignada. Estos son los datos del partido."
+            : "¡Ya están todos! Pónganse de acuerdo y reserven la cancha directamente con el club.",
+        },
+        { kv: [...base, ...(game.court_name ? [["Cancha", cancha] as [string, string]] : []), ["Juegan", quienes(game.players)]] },
         ...(mapa ? [{ button: ["Cómo llegar", mapa] as [string, string] }] : []),
         { h: "Contacto de tus compañeros" },
         {
@@ -241,7 +253,9 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
       title = "Se liberó un cupo";
       blocks = [
         {
-          p: `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${faltan(missing)}. La cancha que tenía asignada quedó libre; cuando se complete, se asigna la primera cancha libre del turno.`,
+          p: coord
+            ? `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${faltan(missing)}. Si ya habían reservado la cancha con el club, revisen si la mantienen.`
+            : `Un jugador canceló su cupo, así que el partido vuelve a buscar jugadores: ${faltan(missing)}. La cancha que tenía asignada quedó libre; cuando se complete, se asigna la primera cancha libre del turno.`,
         },
         { kv: [...base, ["Juegan", quienes(game.players)]] },
         cancelBlock,
@@ -269,6 +283,27 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
   return { subject, text: `${title}\n\n${toText(blocks)}`, html: toHtml(title, blocks) };
 }
 
+/** Correo con el enlace de ingreso a la cuenta (cuentas: preparadas, desactivadas). */
+export function renderLoginEmail(site: string, token: string, minutes: number): Email {
+  const url = `${site}/#entrar=${token}`;
+  const blocks: Block[] = [
+    { p: "Toca el botón para entrar a tu cuenta de Peloteo. El enlace sirve una sola vez." },
+    { button: ["Entrar a Peloteo", url] },
+    { small: `Vence en ${minutes} minutos. Si no lo pediste, ignora este correo: nadie puede entrar sin él.` },
+  ];
+  return { subject: "Tu enlace para entrar a Peloteo", text: `Entrar a Peloteo\n\n${toText(blocks)}`, html: toHtml("Entrar a Peloteo", blocks) };
+}
+
+/** Envía un correo suelto (no ligado a un partido) con Resend. */
+export async function sendResendMail(apiKey: string, from: string, to: string, mail: Email, fetchFn: typeof fetch = fetch): Promise<void> {
+  const res = await fetchFn(RESEND_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "User-Agent": "peloteo/1.0" },
+    body: JSON.stringify({ from, to: [to], subject: mail.subject, html: mail.html, text: mail.text }),
+  });
+  if (!res.ok) throw new Error(`Resend respondió ${res.status}`);
+}
+
 // ---------------------------------------------------------------
 // Canales
 // ---------------------------------------------------------------
@@ -280,7 +315,6 @@ export interface MailConfig {
   from: string;
 }
 
-const RESEND_URL = "https://api.resend.com/emails";
 
 /** Envía con Resend. Lanza un error (sin datos del jugador) si la API responde mal. */
 export function resendChannel(apiKey: string, config: MailConfig, fetchFn: typeof fetch = fetch): Channel {

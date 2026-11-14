@@ -23,15 +23,15 @@ test("migración 0002: conserva los jugadores y quita la cancha a los encuentros
   assert.deepEqual(db.raw.prepare("PRAGMA foreign_key_check").all(), []);
 });
 
-test("migración 0002: players_per_match pasa a match_sizes; pádel de ejemplo admite 2 o 4", () => {
+test("migraciones 0002 y 0008: match_sizes; pádel y tenis admiten singles (2) o dobles (4)", () => {
   const db = new TestDb();
   const sports = db.raw.prepare("SELECT id, match_sizes FROM sports ORDER BY id").all();
   assert.deepEqual(
     sports.map((s) => ({ ...s })),
     [
       { id: "D-PAD01", match_sizes: "2,4" },
-      { id: "D-TEN01", match_sizes: "2" },
-      { id: "D-TEN02", match_sizes: "2" },
+      { id: "D-TEN01", match_sizes: "2,4" },
+      { id: "D-TEN02", match_sizes: "2,4" },
     ],
   );
   const cols = db.raw.prepare("PRAGMA table_info(sports)").all().map((c) => (c as { name: string }).name);

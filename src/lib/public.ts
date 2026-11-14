@@ -7,7 +7,8 @@
 
 import { parseIntList } from "./availability.ts";
 import { placeholders, type Db } from "./db.ts";
-import { canStillCancel, isSlotOpen, type LocalNow } from "./time.ts";
+import { asWho, isMine, ownsParams, ownsSql, type Who } from "./identity.ts";
+import { addDays, canStillCancel, isDate, isSlotOpen, type LocalNow } from "./time.ts";
 
 /** Nombre normalizado para agrupar deportes: sin tildes, minúsculas y espacios simples. */
 export function sportKey(name: string): string {
@@ -224,21 +225,22 @@ async function myGameRows(db: Db, where: string, params: unknown[]): Promise<MyG
 async function toMyGames(
   db: Db,
   rows: MyGameRow[],
-  visitorId: string,
+  visitor: string | Who,
   now: LocalNow,
   withContacts = true,
 ): Promise<MyGame[]> {
   if (rows.length === 0) return [];
+  const who = asWho(visitor);
   const { results: players } = await db
     .prepare(
-      `SELECT game_id, initials, level, email, whatsapp, visitor_id FROM players
+      `SELECT game_id, initials, level, email, whatsapp, visitor_id, user_id FROM players
        WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`,
     )
     .bind(...rows.map((r) => r.id))
-    .all<{ game_id: string; initials: string; level: number; email: string; whatsapp: string | null; visitor_id: string }>();
+    .all<{ game_id: string; initials: string; level: number; email: string; whatsapp: string | null; visitor_id: string; user_id: string | null }>();
   return rows.map((g) => {
     const own = players.filter((p) => p.game_id === g.id);
-    const iAmIn = own.some((p) => p.visitor_id === visitorId);
+    const iAmIn = own.some((p) => isMine(p, who));
     const showContacts = withContacts && g.status === "confirmado" && iAmIn;
     return {
       id: g.id,
@@ -256,7 +258,7 @@ async function toMyGames(
       players: own.map((p) => ({
         initials: p.initials,
         level: p.level,
-        me: p.visitor_id === visitorId,
+        me: isMine(p, who),
         ...(showContacts ? { email: p.email, whatsapp: p.whatsapp } : {}),
       })),
       can_cancel: iAmIn && g.status !== "cancelado" && canStillCancel(g.date, g.time, now),
@@ -265,21 +267,26 @@ async function toMyGames(
 }
 
 /** Encuentros del visitante de hoy en adelante, incluidos los cancelados por el administrador. */
-export async function listMyGames(db: Db, visitorId: string, now: LocalNow): Promise<MyGame[]> {
+export async function listMyGames(db: Db, visitorId: string | Who, now: LocalNow): Promise<MyGame[]> {
   const rows = await myGameRows(
     db,
-    "g.date >= ? AND EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND p.visitor_id = ?)",
-    [now.date, visitorId],
+    `g.date >= ? AND EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND ${ownsSql("p")})`,
+    [now.date, ...ownsParams(asWho(visitorId))],
   );
   return toMyGames(db, rows, visitorId, now);
 }
 
 /** Un encuentro visto por uno de sus jugadores (para la pantalla de confirmación). */
-export async function getMyGame(db: Db, gameId: string, visitorId: string, now: LocalNow): Promise<MyGame | null> {
+export async function getMyGame(
+  db: Db,
+  gameId: string,
+  visitorId: string | Who,
+  now: LocalNow,
+): Promise<MyGame | null> {
   const rows = await myGameRows(
     db,
-    "g.id = ? AND EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND p.visitor_id = ?)",
-    [gameId, visitorId],
+    `g.id = ? AND EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND ${ownsSql("p")})`,
+    [gameId, ...ownsParams(asWho(visitorId))],
   );
   const [game] = await toMyGames(db, rows, visitorId, now);
   return game ?? null;
@@ -292,11 +299,116 @@ export async function getMyGame(db: Db, gameId: string, visitorId: string, now: 
 export async function getGameByToken(db: Db, token: string, now: LocalNow): Promise<MyGame | null> {
   if (!/^[0-9a-f]{32}$/.test(token)) return null;
   const player = await db
-    .prepare("SELECT game_id, visitor_id FROM players WHERE cancel_token = ?")
+    .prepare("SELECT game_id, visitor_id, user_id FROM players WHERE cancel_token = ?")
     .bind(token)
-    .first<{ game_id: string; visitor_id: string }>();
+    .first<{ game_id: string; visitor_id: string; user_id: string | null }>();
   if (!player) return null;
   const rows = await myGameRows(db, "g.id = ?", [player.game_id]);
-  const [game] = await toMyGames(db, rows, player.visitor_id, now, false);
+  const [game] = await toMyGames(db, rows, { visitorId: player.visitor_id, userId: player.user_id }, now, false);
   return game ?? null;
+}
+
+// ---------------------------------------------------------------
+// Partidos que buscan jugadores, por día y por mitad del día (inicio)
+// ---------------------------------------------------------------
+
+/** Días que muestra el calendario horizontal del inicio, incluido hoy. */
+export const OVERVIEW_DAYS = 8;
+
+/** Mitad del día de un turno: "am" antes de las 12:00, "pm" desde las 12:00. */
+export type Half = "am" | "pm";
+export const halfOf = (time: string): Half => (time < "12:00" ? "am" : "pm");
+
+export interface BlockSummary {
+  date: string;
+  /** Partidos a los que el visitante puede sumarse en la mañana y en la tarde. */
+  am: number;
+  pm: number;
+}
+
+export interface OpenGame {
+  id: string;
+  date: string;
+  time: string;
+  capacity: number;
+  missing: number;
+  accepted_levels: number[];
+  sport: { id: string; name: string; key: string };
+  venue: { id: string; name: string };
+  players: { initials: string; level: number }[];
+}
+
+interface OpenRow {
+  id: string;
+  date: string;
+  time: string;
+  capacity: number;
+  accepted_levels: string;
+  sport_id: string;
+  sport_name: string;
+  venue_id: string;
+  venue_name: string;
+  n: number;
+}
+
+/**
+ * Encuentros abiertos con cupo, en turno vigente, de deportes y lugares vigentes,
+ * entre dos fechas. Excluye los del propio visitante (no puede sumarse a ellos).
+ * No filtra por nivel: el inicio aún no conoce el nivel del jugador.
+ */
+async function openRows(db: Db, from: string, to: string, visitorId: string | Who, now: LocalNow): Promise<OpenRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT g.id, g.date, g.time, g.capacity, g.accepted_levels,
+              s.id AS sport_id, s.name AS sport_name, v.id AS venue_id, v.name AS venue_name,
+              (SELECT count(*) FROM players p WHERE p.game_id = g.id) AS n
+       FROM games g
+       JOIN sports s ON s.id = g.sport_id AND s.deleted_at IS NULL
+       JOIN venues v ON v.id = g.venue_id AND v.deleted_at IS NULL
+       WHERE g.status = 'abierto' AND g.date BETWEEN ? AND ?
+         AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND ${ownsSql("p")})
+       ORDER BY g.date, g.time, g.rowid`,
+    )
+    .bind(from, to, ...ownsParams(asWho(visitorId)))
+    .all<OpenRow>();
+  return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now));
+}
+
+/** Resumen de los próximos 8 días (hoy incluido): cuántos partidos buscan jugadores en AM y PM. */
+export async function openOverview(db: Db, visitorId: string | Who, now: LocalNow): Promise<BlockSummary[]> {
+  const days = Array.from({ length: OVERVIEW_DAYS }, (_, i) => addDays(now.date, i));
+  const rows = await openRows(db, days[0]!, days[days.length - 1]!, visitorId, now);
+  return days.map((date) => {
+    const mine = rows.filter((g) => g.date === date);
+    return { date, am: mine.filter((g) => halfOf(g.time) === "am").length, pm: mine.filter((g) => halfOf(g.time) === "pm").length };
+  });
+}
+
+/** Partidos que buscan jugadores en un día y mitad del día (dentro de los 8 días del inicio). */
+export async function listOpenBlock(
+  db: Db,
+  date: unknown,
+  half: unknown,
+  visitorId: string | Who,
+  now: LocalNow,
+): Promise<OpenGame[] | null> {
+  if (!isDate(date) || (half !== "am" && half !== "pm")) return null;
+  if (date < now.date || date > addDays(now.date, OVERVIEW_DAYS - 1)) return null;
+  const rows = (await openRows(db, date, date, visitorId, now)).filter((g) => halfOf(g.time) === half);
+  if (rows.length === 0) return [];
+  const { results: players } = await db
+    .prepare(`SELECT game_id, initials, level FROM players WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`)
+    .bind(...rows.map((r) => r.id))
+    .all<{ game_id: string; initials: string; level: number }>();
+  return rows.map((g) => ({
+    id: g.id,
+    date: g.date,
+    time: g.time,
+    capacity: g.capacity,
+    missing: g.capacity - g.n,
+    accepted_levels: parseIntList(g.accepted_levels, 1, 5),
+    sport: { id: g.sport_id, name: g.sport_name, key: sportKey(g.sport_name) },
+    venue: { id: g.venue_id, name: g.venue_name },
+    players: players.filter((p) => p.game_id === g.id).map(({ initials, level }) => ({ initials, level })),
+  }));
 }

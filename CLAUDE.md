@@ -7,7 +7,7 @@ El archivo `referencia/peloteo.html` es el prototipo aprobado. Úsalo como guía
 ## Objetivo y prioridades
 
 1. Costo de operación mínimo (plan gratuito mientras el uso lo permita).
-2. Uso desde el teléfono primero; sin registro para los jugadores.
+2. Uso desde el teléfono primero; sin registro obligatorio para los jugadores (cuentas opcionales preparadas, aún desactivadas).
 3. Simple de mantener por una sola persona.
 
 ## Stack
@@ -35,14 +35,14 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **venues** (lugares): `id`, `name`, `address`, `maps_url`, `created_at`.
 
-**sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; por ejemplo tenis `"2"` y pádel `"2,4"`), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
+**sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; tenis y pádel `"2,4"`: singles o dobles, migración `0008`), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
 
 **categories**: `sport_id`, `level` (1 a 5), `label`. Máximo 5 por deporte. El nivel 1 es avanzado y el 5 principiante. El texto es libre y puede ser amable o gracioso, por ejemplo "Estoy entrenando para Wimbledon" o "Apenas logro pasar la pelota".
 
 **courts** (canchas): `id`, `sport_id`, `venue_id`, `name`, `surface` (arcilla, carpeta sintética, etc.), `status` (`operativa`, `mantencion`, `cerrada`), `notes`, `maps_url`, `lat`, `lng`, `open_time`, `close_time`, `slot_minutes` (60, 90 o 120), `days` (días de la semana en que opera, texto con números separados por coma donde 0 = domingo y 6 = sábado, por ejemplo `"1,2,3,4,5"`), `available_from`, `available_to` (opcionales). Cada cancha pertenece a un solo deporte; por ahora no se contemplan canchas compartidas entre deportes.
 
 **games** (encuentros): `id`, `venue_id`, `sport_id`, `court_id` (nulo mientras no esté confirmado), `date`, `time`, `capacity` (una de las `match_sizes` del deporte), `accepted_levels` (niveles que acepta quien abrió el partido, texto como `"2,3,4"`), `status` (`abierto`, `sin_cancha`, `confirmado`, `cancelado`), `created_at`.
-- Un encuentro `confirmado` siempre tiene cancha; uno `abierto` o `sin_cancha`, nunca (CHECK en la base).
+- Un encuentro `abierto` o `sin_cancha` nunca tiene cancha (CHECK en la base). Uno `confirmado` tiene cancha en modo reserva y no la tiene en modo coordinación (migración `0007`).
 - Restricción única sobre (`court_id`, `date`, `time`) solo para encuentros `confirmado`: es la defensa contra la doble reserva.
 - El estado `cancelado` lo asigna solo el administrador (ver Administrador).
 
@@ -54,11 +54,26 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 
 **sessions**: `id`, `admin_id`, `expires_at`, `second_factor_passed`.
 
+**Cuentas de jugadores (migración `0006`, preparadas y desactivadas):**
+- **users**: `id` (prefijo `U-`), `email` (único, en minúsculas, verificado por el enlace), `initials`, `whatsapp`, `whatsapp_opt_in`, `created_at`, `last_login_at`.
+- **user_levels**: `user_id`, `sport_key` (nombre normalizado del deporte, por ejemplo `tenis`), `level`.
+- **login_links**: `id` (prefijo `K-`), `email`, `token_hash` (SHA-256), `visitor_id` (navegador que lo pidió), `expires_at`, `used_at`, `created_at`.
+- **user_sessions**: `id` (SHA-256 del token), `user_id`, `expires_at`, `created_at`.
+- **players.user_id** (nulo sin cuenta). Índice único (`game_id`, `user_id`) cuando no es nulo: una cuenta no ocupa dos cupos del mismo encuentro.
+
 **login_attempts** (intentos fallidos de login del administrador): `id`, `username`, `ip`, `created_at`. Se usa para aplicar el límite de intentos.
 
 **court_blocks** (bloqueos de canchas): `id` (prefijo `B-`), `court_id`, `date`, `start_time`, `end_time`, `reason` (opcional, por ejemplo "Reserva por teléfono"), `created_at`.
 
 ## Reglas de negocio
+
+**Modo de canchas (decidido el 2026-11-14): `COURT_MODE = "coordinacion"`** en `wrangler.jsonc`. Mientras Peloteo no esté conectado al sistema de reservas de los clubes, no conoce la ocupación real de las canchas. El objetivo principal es poner de acuerdo a los jugadores:
+- La interfaz no muestra canchas: solo deporte, lugar y hora ("Hora disponible" en vez de "N canchas libres"; sin cantidad de canchas en el desplegable ni en los lugares).
+- Las horas ofrecidas salen del horario del club configurado en el admin (apertura, cierre, duración y días de las canchas del deporte en ese lugar) y sus bloqueos.
+- A una misma hora se pueden confirmar como máximo tantos partidos como canchas operativas sin bloqueo tenga ese deporte en el lugar; los abiertos no ocupan. Se valida en SQL en la misma operación (`roomLeftSql` en `matching.ts`).
+- Al completarse, el partido queda `confirmado` sin cancha (`court_id` nulo) y se comparten los contactos para que los jugadores reserven la cancha con el club. Si ya se alcanzó el máximo de esa hora, queda `sin_cancha`, como hoy.
+- Los correos y pantallas lo dicen: "reserven la cancha con el club".
+- El modo `"reserva"` (sin la variable, como en las pruebas antiguas) mantiene todo lo descrito abajo: cancha libre concreta, asignada al completarse. Las reglas siguientes describen ese modo; en coordinación se aplican salvo lo indicado arriba.
 
 - **Turnos:** cada cancha genera turnos desde `open_time` mientras el turno completo termine antes de `close_time`. Solo canchas `operativa`, en sus días de operación y dentro de su rango de fechas.
 - **Pasado:** un turno se muestra y se acepta (abrir, unirse) hasta 15 minutos después de su hora de inicio; pasado ese margen ya no se muestra ni se acepta.
@@ -79,6 +94,14 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Cookie `visitor_id` aleatoria (`V-` + 32 caracteres hex), de 400 días (el máximo que aceptan los navegadores), `HttpOnly`, `Secure`, `SameSite=Lax`, creada por el servidor en la primera llamada a `/api`. Una cookie con formato inválido se reemplaza.
 - "Mis partidos" lista los encuentros de esa cookie de hoy en adelante, incluidos los cancelados por el administrador. Muestra el contacto de los compañeros solo si el encuentro está confirmado, y el botón de cancelar solo mientras falte al menos 1 hora.
 - El navegador recuerda iniciales, email, WhatsApp y nivel por deporte en `localStorage`, solo como comodidad.
+- **Aviso por WhatsApp oculto (2026-11-14):** el formulario no muestra la casilla "Avísenme también por WhatsApp" y envía `whatsapp_opt_in = false`, porque la etapa 6 no está implementada. Todo lo demás ya la soporta (base, servidor, perfil de cuentas). Para mostrarla: `WHATSAPP_NOTICES = true` al inicio de `public/app.js`. El campo WhatsApp sigue visible: se usa para el enlace `wa.me` entre compañeros confirmados.
+- **Cuentas opcionales (preparadas, desactivadas; decidido el 2026-11-14):** el sitio sigue funcionando sin registro. Con `ACCOUNTS_ENABLED = "1"` (variable de `wrangler.jsonc`, hoy ausente) se activan:
+  - Ingreso con un enlace de un solo uso enviado al correo (`https://peloteo.cl/#entrar=<token>`), sin contraseñas; vence en 15 minutos; máximo 3 enlaces por correo cada 15 minutos.
+  - Al entrar se crea la cuenta si no existía y pasan a ella los cupos de ese navegador y los anotados con ese correo (uno por encuentro). Desde ahí se ven en todos los dispositivos.
+  - Sesión en la cookie `peloteo_user` (`HttpOnly`, `Secure`, `SameSite=Lax`, 90 días); la base guarda el SHA-256 del token. La cookie `visitor_id` se mantiene para quien no tiene cuenta. Una cuenta igual necesita una cookie de sesión; lo que deja de depender del navegador es la información del jugador.
+  - Perfil: iniciales, WhatsApp, aviso por WhatsApp y nivel por deporte (mismas reglas que al anotarse).
+  - La lógica de partidos identifica a quien juega con `Who` (`src/lib/identity.ts`): un cupo es suyo si es de su navegador o de su cuenta. Sin cuentas, `userId` es nulo y todo funciona como antes.
+  - Falta para activarlas: la interfaz (pedir el enlace, pantalla `#entrar=`, perfil, salir) y usar el perfil para completar el formulario. La lógica, las rutas y las pruebas están en `src/lib/accounts.ts`, `src/public.ts` y `test/accounts.test.ts`.
 - Cada aviso incluye un enlace con `cancel_token`, para poder cancelar desde otro dispositivo: `https://peloteo.cl/#cancelar=<token>`. El token va en el fragmento (no llega al servidor ni queda en registros); la página lo quita de la barra de direcciones y lo envía en el cuerpo de un POST. La vista del enlace no muestra contactos.
 
 ## Administrador
@@ -114,7 +137,9 @@ Públicas:
 - `GET /api/me/games` y `POST /api/games/:id/cancel`.
 - Enlace de cancelación de los correos: `POST /api/token/game` (ver el encuentro) y `POST /api/token/cancel` (liberar el cupo), ambos con `{ token }` en el cuerpo.
 - También: `GET /api/today` (fecha local y último día agendable, para el calendario) y `GET /api/sports/:id` (cantidades y categorías de un deporte).
+- Inicio: `GET /api/open` (resumen de los próximos 8 días, hoy incluido: cuántos partidos buscan jugadores en AM y PM) y `GET /api/open/block?date=&half=am|pm` (esos partidos: deporte, lugar, hora, niveles aceptados, cupos y jugadores con iniciales y nivel; 400 fuera de los 8 días).
 - `GET /api/search` recibe `sport_id`, `level` (nivel del jugador), `date_from`, `date_to`, `time_from` y `time_to`.
+- Cuentas (responden 404 mientras `ACCOUNTS_ENABLED` no sea `"1"`): `POST /api/account/link` `{ email }` (envía el enlace; 429 si se pidieron demasiados), `POST /api/account/login` `{ token }`, `GET /api/account/me`, `PUT /api/account/profile` y `POST /api/account/logout`.
 - Errores: JSON `{ error, code, field }` con 400 (datos), 404 (no existe) o 409 (turno ocupado, partido completo, ya inscrito, cancelado).
 
 Administración (requieren sesión): `POST /admin/login`, `POST /admin/login/2fa`, `POST /admin/logout`, y CRUD bajo `/admin/api/venues`, `/sports`, `/courts`, `/games`.
@@ -145,6 +170,10 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 
 ## Interfaz
 
+- **Inicio (2026-11-14):** foto con "¿JUGAMOS?"; debajo, la tarjeta "¿Buscas con quién jugar?" con un calendario horizontal de 8 días (hoy incluido), cada día con un bloque AM (antes de las 12:00) y uno PM. El bloque es blanco si nadie busca jugadores y naranjo (`#EE8A24`) si hay partidos `abierto` con cupo en turno vigente (sin filtrar por nivel y sin contar los del propio visitante). Debajo, la tarjeta blanca "Crea un partido" con el desplegable de deportes.
+  - **Deportes siempre en un menú desplegable** (portada, crear en un bloque y búsqueda). Al inicio el sitio será solo de tenis, pero queda listo para sumar otros: el desplegable muestra los deportes que tengan canchas operativas. Por defecto elige el último usado en ese navegador; si no, tenis.
+  - Al tocar un bloque se abre la lista de sus partidos (hora, deporte y lugar, niveles, cupos, quiénes juegan) con "Unirme" (va al formulario; el servidor valida el nivel) y, debajo, "Crear un partido en la mañana/tarde": se elige el deporte y el calendario abre en ese día mostrando solo los turnos de esa mitad ("Ver todo el día" quita el filtro).
+  - "Configuración" está en la barra superior (ícono de engranaje; el texto se oculta hasta 640 px), ya no al pie de la página.
 - Flujo público: deporte, lugar, calendario (solo días entre hoy y hoy + 15; si el rango cruza al mes siguiente, se puede avanzar a ese mes), horas del día, formulario, confirmación.
 - El calendario marca los días con encuentros que buscan jugadores.
 - El selector de nivel muestra el número y el texto de la categoría.
@@ -241,10 +270,14 @@ Decididas (2026-11-12):
 - No se puede modificar una cancha si eso afecta encuentros futuros; el administrador siempre puede cancelar.
 - Un turno sigue visible y aceptando jugadores hasta 15 minutos después de su inicio.
 - La migración incluye el hash y la sal de la contraseña inicial `admin`; se acepta porque se obliga a cambiarla en el primer ingreso.
-- Jugadores por partido: cada deporte define las cantidades permitidas (tenis 2; pádel 2 o 4) y quien abre elige una.
+- Jugadores por partido: cada deporte define las cantidades permitidas (tenis y pádel: 2 o 4, singles o dobles; tenis desde el 2026-11-14, migración `0008`) y quien abre elige una; la API exige elegir cuando hay más de una.
 - Cancha: no se retiene al abrir; se asigna la primera libre al completarse. Solo se abre si queda al menos una cancha libre. Si al completarse no hay cancha, el encuentro no se confirma (`sin_cancha`). La restricción única aplica solo a confirmados (migración `0002`).
 - Niveles: quien abre define los niveles aceptados; solo se unen jugadores de esos niveles; la búsqueda muestra solo encuentros a los que el jugador puede unirse.
 - Bloqueos: el administrador bloquea una cancha por fecha y rango de horas, con motivo opcional; el turno bloqueado no se ofrece ni se asigna; si hay un encuentro confirmado, se advierte y, al confirmar, se cancela (migración `0004`).
 - Cancelación de un cupo: hasta 1 hora antes del inicio.
 - Correo: Resend, remitente `avisos@peloteo.cl` ("Peloteo"); dominio definitivo https://peloteo.cl (2026-11-13).
 - Segundo factor (2026-11-13): opcional, QR generado sin dependencias y 10 códigos de respaldo; se hizo antes de la etapa 6.
+- Cuentas de jugadores (2026-11-14): opcionales, ingreso por enlace al correo, los partidos previos pasan a la cuenta. Preparadas (migración `0006`, lógica, rutas y pruebas) pero desactivadas hasta construir su interfaz.
+- Deportes (2026-11-14): al inicio solo tenis; siempre se eligen en un menú desplegable.
+- Canchas (2026-11-14): modo coordinación; solo se muestran deporte, lugar y hora; las horas salen del horario del club; a una misma hora, como máximo tantos confirmados como canchas; al completarse se confirma sin cancha y los jugadores la reservan con el club (migración `0007`). La lógica de reserva queda lista para cuando haya conexión con el club.
+- Aviso por WhatsApp (2026-11-14): oculto hasta implementar la etapa 6 (`WHATSAPP_NOTICES` en `public/app.js`).

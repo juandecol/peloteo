@@ -50,6 +50,7 @@ import {
 } from "./lib/config.ts";
 import type { Db } from "./lib/db.ts";
 import type { Channel } from "./lib/notify.ts";
+import type { Email } from "./lib/email.ts";
 import { sendNotices } from "./notices.ts";
 import { localNow } from "./lib/time.ts";
 
@@ -66,6 +67,10 @@ export interface AppBindings {
   MAIL_FROM?: string;
   /** Secret de Cloudflare; nunca en el repositorio. */
   RESEND_API_KEY?: string;
+  /** "1" activa las cuentas de jugadores (preparadas; por ahora desactivadas). */
+  ACCOUNTS_ENABLED?: string;
+  /** "coordinacion" (actual) o "reserva": ver CourtMode en lib/availability.ts. */
+  COURT_MODE?: string;
 }
 
 export interface AppOptions {
@@ -73,6 +78,8 @@ export interface AppOptions {
   now?: () => Date;
   /** Canales de aviso inyectables para las pruebas. */
   channels?: Channel[];
+  /** Envío de correos sueltos (enlace de ingreso) inyectable para las pruebas. */
+  mailer?: (to: string, mail: Email) => Promise<void>;
 }
 
 type Env = { Bindings: AppBindings; Variables: { session: Session } };

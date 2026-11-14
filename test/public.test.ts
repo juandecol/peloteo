@@ -68,6 +68,7 @@ const player = (initials: string, level = 3, extra: Record<string, unknown> = {}
 
 const openTenis = (initials = "MT", extra: Record<string, unknown> = {}) => ({
   sport_id: "D-TEN01",
+  capacity: 2, // tenis admite singles (2) o dobles (4): migración 0008
   date: DAY,
   time: "18:00",
   accepted_levels: [2, 3, 4],
@@ -136,7 +137,7 @@ test("lugares: los que ofrecen un deporte, con categorías, cantidades y partido
     ["Club Los Aromos (ejemplo)", "D-TEN02", 1, 0],
     ["Country Club Santa Martina", "D-TEN01", 2, 1],
   ]);
-  assert.deepEqual(r[1].sport.match_sizes, [2]);
+  assert.deepEqual(r[1].sport.match_sizes, [2, 4]); // tenis: singles o dobles (0008)
   assert.deepEqual(r[1].sport.categories[0], { level: 1, label: "Estoy entrenando para Wimbledon" });
   const padel = (await a.req("GET", "/api/sports/D-PAD01")).json;
   assert.deepEqual(padel.match_sizes, [2, 4]);
@@ -151,7 +152,8 @@ test("disponibilidad: resumen del mes y turnos del día", async () => {
   const w = world();
   const a = w.browser();
   const today = (await a.req("GET", "/api/today")).json;
-  assert.deepEqual(today, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01" });
+  // Sin COURT_MODE en el entorno, el modo es "reserva".
+  assert.deepEqual(today, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva" });
   const month = (await a.req("GET", "/api/availability?sport_id=D-TEN01&month=2026-11")).json;
   assert.equal(month.days[0].date, "2026-11-16");
   const day = (await a.req("GET", `/api/availability?sport_id=D-TEN01&date=${DAY}`)).json;
@@ -314,4 +316,62 @@ test("Mis partidos: no se puede cancelar el cupo de otro", async () => {
   const r = await b.req("POST", `/api/games/${g.id}/cancel`, {});
   assert.equal(r.status, 404);
   assert.equal((await a.req("GET", "/api/me/games")).json.length, 1);
+});
+
+// ---------------------------------------------------------------
+// Inicio: partidos que buscan jugadores en los próximos 8 días (AM/PM)
+// ---------------------------------------------------------------
+
+test("inicio: resumen de 8 días con AM y PM; no cuenta los propios ni los completos", async () => {
+  const w = world();
+  const a = w.browser();
+  const b = w.browser();
+  const tenis = (await a.req("POST", "/api/games", openTenis("MT"))).json.game; // martes 18:00 (PM)
+  await a.req("POST", "/api/games", { ...openTenis("MT"), sport_id: "D-PAD01", time: "09:30", capacity: 4 }); // martes 09:30 (AM)
+
+  const seen = (await b.req("GET", "/api/open")).json;
+  assert.equal(seen.length, 8);
+  assert.equal(seen[0].date, "2026-11-16"); // hoy incluido
+  assert.equal(seen[7].date, "2026-11-23");
+  assert.deepEqual(seen[1], { date: DAY, am: 1, pm: 1 });
+  assert.ok(seen.filter((d: any) => d.date !== DAY).every((d: any) => d.am === 0 && d.pm === 0));
+  // Quien abrió no ve sus propios partidos como disponibles.
+  assert.deepEqual((await a.req("GET", "/api/open")).json[1], { date: DAY, am: 0, pm: 0 });
+
+  // Al completarse, el partido de tenis deja de buscar jugadores.
+  await b.req("POST", `/api/games/${tenis.id}/join`, { player: player("RS") });
+  assert.deepEqual((await w.browser().req("GET", "/api/open")).json[1], { date: DAY, am: 1, pm: 0 });
+});
+
+test("inicio: lista de un bloque con deporte, lugar, hora y niveles; sin contactos", async () => {
+  const w = world();
+  await w.browser().req("POST", "/api/games", openTenis("MT"));
+  const b = w.browser();
+  const pm = await b.req("GET", `/api/open/block?date=${DAY}&half=pm`);
+  assert.equal(pm.status, 200);
+  assert.equal(pm.json.length, 1);
+  const g = pm.json[0];
+  assert.equal(g.time, "18:00");
+  assert.equal(g.missing, 1);
+  assert.deepEqual(g.accepted_levels, [2, 3, 4]);
+  assert.deepEqual(g.sport, { id: "D-TEN01", name: "Tenis", key: "tenis" });
+  assert.equal(g.venue.id, "L-SM001");
+  assert.deepEqual(g.players, [{ initials: "MT", level: 3 }]);
+  assert.ok(!JSON.stringify(pm.json).includes("@"));
+  assert.deepEqual((await b.req("GET", `/api/open/block?date=${DAY}&half=am`)).json, []);
+  // Fuera de los 8 días o con datos inválidos: error.
+  assert.equal((await b.req("GET", "/api/open/block?date=2026-11-24&half=am")).status, 400);
+  assert.equal((await b.req("GET", "/api/open/block?date=2026-11-15&half=am")).status, 400);
+  assert.equal((await b.req("GET", `/api/open/block?date=${DAY}&half=noche`)).status, 400);
+});
+
+test("inicio: un turno pasado (más de 15 minutos) ya no aparece", async () => {
+  const w = world();
+  await w.browser().req("POST", "/api/games", openTenis("MT"));
+  const b = w.browser();
+  w.at("2026-11-17T21:10:00Z"); // martes 18:10: sigue visible
+  assert.equal((await b.req("GET", "/api/open")).json[0].pm, 1);
+  w.at("2026-11-17T21:20:00Z"); // martes 18:20: ya no
+  assert.equal((await b.req("GET", "/api/open")).json[0].pm, 0);
+  assert.deepEqual((await b.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json, []);
 });

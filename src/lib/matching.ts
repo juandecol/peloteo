@@ -16,9 +16,11 @@ import {
   parseIntList,
   toPublicGames,
   type GameRow,
+  type CourtMode,
   type PublicGame,
 } from "./availability.ts";
 import type { PendingNotice } from "./notify.ts";
+import { asWho, ownsParams, ownsSql, type Who } from "./identity.ts";
 import { isUniqueViolation, newId, newToken, placeholders, type Db, type DbStatement } from "./db.ts";
 import {
   canStillCancel,
@@ -206,7 +208,7 @@ async function playerIds(db: Db, gameId: string): Promise<string[]> {
   return results.map((r) => r.id);
 }
 
-async function publicGame(db: Db, gameId: string, visitorId: string): Promise<PublicGame> {
+async function publicGame(db: Db, gameId: string, visitorId: string | Who): Promise<PublicGame> {
   const row = await db
     .prepare(`SELECT ${GAME_COLUMNS} FROM games WHERE id = ? AND status <> 'cancelado'`)
     .bind(gameId)
@@ -250,24 +252,44 @@ function firstFreeCourtSql(courtIds: string[], date: string, time: string): [str
   ];
 }
 
+/**
+ * Modo coordinación: condición SQL "aún cabe un partido confirmado en el turno":
+ * hay menos confirmados (con o sin cancha) que canchas que generan el turno sin
+ * bloqueo. Devuelve [sql, parámetros].
+ */
+function roomLeftSql(courtIds: string[], sportId: string, date: string, time: string): [string, unknown[]] {
+  if (courtIds.length === 0) return ["0", []];
+  return [
+    `((SELECT count(*) FROM courts c
+       WHERE c.id IN (${placeholders(courtIds.length)})
+         AND NOT EXISTS (
+           SELECT 1 FROM court_blocks b
+           WHERE b.court_id = c.id AND b.date = ? AND b.end_time > ? AND b.start_time < ${SLOT_END_SQL}))
+      > (SELECT count(*) FROM games x
+         WHERE x.sport_id = ? AND x.date = ? AND x.time = ? AND x.status = 'confirmado'))`,
+    [...courtIds, date, time, time, time, sportId, date, time],
+  ];
+}
+
 function insertPlayer(
   db: Db,
   condition: string,
   conditionParams: unknown[],
   id: string,
   gameId: string,
-  visitorId: string,
+  visitor: string | Who,
   p: ValidPlayer,
   token: string,
 ): DbStatement {
+  const who = asWho(visitor)!;
   return db
     .prepare(
       `INSERT INTO players
-         (id, game_id, visitor_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
+         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
     )
     .bind(
-      id, gameId, visitorId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token,
+      id, gameId, who.visitorId, who.userId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token,
       ...conditionParams,
     );
 }
@@ -301,8 +323,9 @@ export interface CreateGameInput {
 export async function createGame(
   db: Db,
   input: CreateGameInput,
-  visitorId: string,
+  visitorId: string | Who,
   now: LocalNow,
+  mode: CourtMode = "reserva",
 ): Promise<JoinResult> {
   const sportId = typeof input.sport_id === "string" ? input.sport_id : "";
   const sport = await loadSport(db, sportId);
@@ -326,7 +349,10 @@ export async function createGame(
   if (courtIds.length === 0) {
     throw new MatchError("turno_invalido", "No hay canchas para esa hora. Elige otra.");
   }
-  const [freeSql, freeParams] = firstFreeCourtSql(courtIds, date, time);
+  // Reserva: debe quedar una cancha libre. Coordinación: debe caber otro confirmado.
+  const [roomSql, roomParams] =
+    mode === "coordinacion" ? roomLeftSql(courtIds, sport.id, date, time) : firstFreeCourtSql(courtIds, date, time);
+  const roomCondition = mode === "coordinacion" ? roomSql : `${roomSql} IS NOT NULL`;
 
   // Reintenta solo si chocó un ID generado (muy improbable).
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -340,9 +366,9 @@ export async function createGame(
             `INSERT INTO games
                (id, venue_id, sport_id, court_id, date, time, capacity, accepted_levels, status)
              SELECT ?, ?, ?, NULL, ?, ?, ?, ?, 'abierto'
-             WHERE ${freeSql} IS NOT NULL`,
+             WHERE ${roomCondition}`,
           )
-          .bind(gameId, sport.venue_id, sport.id, date, time, capacity, accepted.join(","), ...freeParams),
+          .bind(gameId, sport.venue_id, sport.id, date, time, capacity, accepted.join(","), ...roomParams),
         insertPlayer(db, "EXISTS (SELECT 1 FROM games WHERE id = ?)", [gameId], playerId, gameId, visitorId, player, token),
       ]);
       if (!gameRes || gameRes.meta.changes === 0) {
@@ -375,8 +401,9 @@ export async function joinGame(
   db: Db,
   gameId: string,
   input: PlayerInput,
-  visitorId: string,
+  visitorId: string | Who,
   now: LocalNow,
+  mode: CourtMode = "reserva",
 ): Promise<JoinResult> {
   const game = await loadGame(db, gameId);
   if (!game) throw new MatchError("encuentro_no_existe", "Ese partido ya no existe.");
@@ -397,13 +424,14 @@ export async function joinGame(
   }
 
   const member = await db
-    .prepare("SELECT 1 AS x FROM players WHERE game_id = ? AND visitor_id = ?")
-    .bind(gameId, visitorId)
+    .prepare(`SELECT 1 AS x FROM players p WHERE p.game_id = ? AND ${ownsSql("p")}`)
+    .bind(gameId, ...ownsParams(asWho(visitorId)))
     .first();
   if (member) throw new MatchError("ya_inscrito", "Ya estás en ese partido.");
 
   const courtIds = await slotCourtIds(db, game.sport_id, game.date, game.time);
   const [freeSql, freeParams] = firstFreeCourtSql(courtIds, game.date, game.time);
+  const [roomSql, roomParams] = roomLeftSql(courtIds, game.sport_id, game.date, game.time);
 
   const playerId = newId("J");
   const token = newToken();
@@ -416,14 +444,22 @@ export async function joinGame(
         [gameId],
         playerId, gameId, visitorId, player, token,
       ),
-      // Completo y con cancha libre: se confirma con la primera cancha libre.
-      db
-        .prepare(
-          `UPDATE games SET status = 'confirmado', court_id = ${freeSql}
-           WHERE id = ? AND status = 'abierto' AND ${PLAYER_COUNT} >= capacity
-             AND ${freeSql} IS NOT NULL`,
-        )
-        .bind(...freeParams, gameId, ...freeParams),
+      // Completo y con lugar: reserva, con la primera cancha libre; coordinación,
+      // sin cancha (los jugadores la reservan con el club).
+      mode === "coordinacion"
+        ? db
+            .prepare(
+              `UPDATE games SET status = 'confirmado'
+               WHERE id = ? AND status = 'abierto' AND ${PLAYER_COUNT} >= capacity AND ${roomSql}`,
+            )
+            .bind(gameId, ...roomParams)
+        : db
+            .prepare(
+              `UPDATE games SET status = 'confirmado', court_id = ${freeSql}
+               WHERE id = ? AND status = 'abierto' AND ${PLAYER_COUNT} >= capacity
+                 AND ${freeSql} IS NOT NULL`,
+            )
+            .bind(...freeParams, gameId, ...freeParams),
       // Completo y sin cancha libre: no se confirma.
       db
         .prepare(
@@ -520,12 +556,12 @@ async function cancelPlayer(db: Db, player: PlayerRef, now: LocalNow): Promise<C
 export async function cancelByVisitor(
   db: Db,
   gameId: string,
-  visitorId: string,
+  visitorId: string | Who,
   now: LocalNow,
 ): Promise<CancelResult> {
   const player = await db
-    .prepare("SELECT id, game_id FROM players WHERE game_id = ? AND visitor_id = ?")
-    .bind(gameId, visitorId)
+    .prepare(`SELECT p.id, p.game_id FROM players p WHERE p.game_id = ? AND ${ownsSql("p")}`)
+    .bind(gameId, ...ownsParams(asWho(visitorId)))
     .first<PlayerRef>();
   if (!player) throw new MatchError("cupo_no_existe", "No tienes un cupo en ese partido.");
   return cancelPlayer(db, player, now);
@@ -566,7 +602,7 @@ export interface SearchInput {
 export async function searchGames(
   db: Db,
   input: SearchInput,
-  visitorId: string | null,
+  visitorId: string | Who | null,
   now: LocalNow,
 ): Promise<PublicGame[]> {
   const sportId = typeof input.sport_id === "string" ? input.sport_id : "";
@@ -592,10 +628,10 @@ export async function searchGames(
        WHERE sport_id = ? AND status = 'abierto'
          AND date BETWEEN ? AND ? AND time BETWEEN ? AND ?
          AND (',' || accepted_levels || ',') LIKE ?
-         AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id = games.id AND p.visitor_id = ?)
+         AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id = games.id AND ${ownsSql("p")})
        ORDER BY date, time, rowid`,
     )
-    .bind(sportId, from, to, t1, t2, `%,${level},%`, visitorId ?? "")
+    .bind(sportId, from, to, t1, t2, `%,${level},%`, ...ownsParams(asWho(visitorId)))
     .all<GameRow>();
 
   const open = results.filter((g) => isSlotOpen(g.date, g.time, now));

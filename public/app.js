@@ -6,6 +6,20 @@
 (function () {
   'use strict';
 
+  // Avisos por WhatsApp (etapa 6, todavía no implementada): mientras sea false,
+  // el formulario no muestra la casilla "Avísenme también por WhatsApp" y
+  // siempre envía whatsapp_opt_in = false. El servidor, la base (players.whatsapp_opt_in)
+  // y el perfil de las cuentas ya la soportan: para activarla basta con poner true
+  // cuando exista el canal de WhatsApp en notify().
+  const WHATSAPP_NOTICES = false;
+
+  // Modo de canchas (lo informa /api/today): en "coordinacion" (el actual, mientras
+  // Peloteo no esté conectado al sistema de reservas de los clubes) no se muestran
+  // canchas: solo el deporte, el lugar y la hora, para ponerse de acuerdo; los
+  // jugadores reservan la cancha con el club. En "reserva" se muestran las canchas
+  // libres y la cancha asignada.
+  const coord = () => !S.today || S.today.court_mode !== 'reserva';
+
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -43,6 +57,10 @@
     game: null, // encuentro al que unirse (vista pública)
     done: null, // encuentro recién creado o al que se unió (vista del jugador)
     mine: [], mineLoaded: false,
+    open: null, // resumen de 8 días (AM/PM) del inicio
+    block: null, blockGames: null, // bloque elegido { date, half } y sus partidos
+    preset: null, // { date, half } al crear un partido desde un bloque
+    fromBlock: false,
     token: null, tokenGame: null, tokenDone: false, // enlace de cancelación de un correo
     search: null, searchOffers: [], results: null,
     err: '', field: '', busy: false, confirm: null,
@@ -74,7 +92,8 @@
     S.view = view; S.err = ''; S.field = ''; S.confirm = null;
     if (!opts || !opts.keepScroll) window.scrollTo(0, 0);
     render();
-    if (view === 'home') { S.sports = (await get('/api/sports')) || []; }
+    if (view === 'home') { S.preset = null; [S.sports] = await Promise.all([get('/api/sports').then((r) => r || []), loadOpen()]); }
+    if (view === 'block') { S.blockGames = null; render(); S.blockGames = (await get('/api/open/block?date=' + S.block.date + '&half=' + S.block.half)) || []; }
     if (view === 'mine') { await loadMine(); }
     if (view === 'search') { await prepareSearch(); }
     render();
@@ -88,11 +107,12 @@
 
   async function chooseOffer(offer) {
     S.offer = offer; S.sportKey = S.sportKey || null;
-    const t = parse(S.today.date);
+    // Desde un bloque del inicio, el calendario abre en ese día y esa mitad del día.
+    const t = parse(S.preset ? S.preset.date : S.today.date);
     S.ym = { y: t.getFullYear(), m: t.getMonth() };
-    S.date = null; S.slots = [];
+    S.date = S.preset ? S.preset.date : null; S.slots = [];
     S.view = 'calendar'; render(); window.scrollTo(0, 0);
-    await loadMonth(); render();
+    await Promise.all([loadMonth(), S.date ? loadDay() : null]); render();
   }
 
   async function loadMonth() {
@@ -124,27 +144,84 @@
     pelota: '<circle cx="12" cy="12" r="8.5"/><path d="M4 10.5c5 1.5 11 1.5 16 0"/>',
     buscar: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
     seguir: '<path d="M9 5l7 7-7 7"/>',
+    ajustes: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   };
+  const HALF = { am: 'mañana', pm: 'tarde' };
+  const halfOf = (time) => (time < '12:00' ? 'am' : 'pm');
+  const diaCorto = (s) => { const d = parse(s); return DIAS[d.getDay()].slice(0, 2); };
   const icon = (name, size) => '<svg width="' + (size || 24) + '" height="' + (size || 24) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[name] + '</svg>';
   const sportIcon = (key) => icon(/padel/.test(key) ? 'padel' : /tenis/.test(key) ? 'tenis' : 'pelota', 26);
   function vHome() {
     // La foto de fondo (public/img/inicio-tenis.webp) es decorativa: va en CSS, no como <img>.
-    let h = '<section class="hero photo"><div class="shade"></div><h1>¿Jugamos?</h1><p>Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.</p></section>';
+    let h = '<section class="hero photo"><div class="shade"></div><h1>¿Jugamos?</h1><p>' + (coord() ? 'Elige deporte, lugar y hora, y encuentra con quién jugar.' : 'Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.') + '</p></section>';
     if (!S.sports.length) {
       return h + '<div class="card"><h2>Todavía no hay deportes disponibles</h2><p class="muted">Pronto aparecerán aquí las canchas para agendar.</p></div>';
     }
-    h += '<h2 class="label">Elige tu deporte</h2><ul class="list">' + S.sports.map((n) =>
-      '<li><button type="button" class="row sport" data-a="sport" data-k="' + esc(n.key) + '"><span class="ico">' + sportIcon(n.key) + '</span><span class="txt"><span class="name">' + esc(n.name) + '</span><span class="meta">' +
-      plural(n.venues, 'lugar', 'lugares') + ' · ' + plural(n.courts, 'cancha', 'canchas') + '</span></span><span class="chev">' + icon('seguir', 22) + '</span></button></li>').join('') + '</ul>';
-    h += '<section class="cta"><h2>¿Buscas con quién jugar?</h2><p>Mira los partidos abiertos que aceptan tu nivel y súmate.</p><button type="button" class="btn dark" data-a="go" data-v="search">Buscar jugadores</button></section>';
+    h += vWeek();
+    h += '<section class="card create" aria-labelledby="crea"><h2 id="crea">Crea un partido</h2>' +
+      sportPicker('create', 'Elige el deporte; después, el lugar, el día y la hora.', 'Ver días y horas') + '</section>';
     return h;
   }
+
+  // Elegir deporte: siempre un menú desplegable (hoy solo tenis; listo para sumar otros).
+  // `form` identifica el formulario (data-f) que recibe { sport }.
+  function sportPicker(form, hint, button) {
+    // Por defecto: el último elegido en este navegador; si no, tenis (el deporte principal); si no, el primero.
+    const has = (k) => S.sports.some((n) => n.key === k);
+    const last = prefs.sport && has(prefs.sport) ? prefs.sport : has('tenis') ? 'tenis' : (S.sports[0] && S.sports[0].key);
+    return '<form data-f="' + form + '" class="picker" novalidate><label class="f" for="sp-' + form + '">Deporte</label>' +
+      '<select id="sp-' + form + '" name="sport">' + S.sports.map((n) =>
+        '<option value="' + esc(n.key) + '"' + (n.key === last ? ' selected' : '') + '>' + esc(n.name) + (coord() ? '' : ' · ' + plural(n.venues, 'lugar', 'lugares') + ', ' + plural(n.courts, 'cancha', 'canchas')) + '</option>').join('') + '</select>' +
+      (hint ? '<p class="small muted">' + hint + '</p>' : '') +
+      '<div class="actions"><button class="btn block" type="submit">' + button + '</button></div></form>';
+  }
+
+  // Calendario horizontal de 8 días (hoy incluido): un bloque AM y uno PM por día.
+  // Naranja si hay partidos que buscan jugadores en esa mitad del día; blanco si no.
+  function vWeek() {
+    const days = S.open || [];
+    const cell = (d, half) => {
+      const n = d[half];
+      const label = cap(fecha(d.date)) + ', ' + HALF[half] + ': ' + (n ? (n === 1 ? '1 partido busca jugadores' : n + ' partidos buscan jugadores') : 'nadie busca jugadores todavía');
+      return '<button type="button" class="blk' + (n ? ' on' : '') + '" data-a="block" data-d="' + d.date + '" data-h="' + half + '" aria-label="' + label + '">' + half.toUpperCase() + '</button>';
+    };
+    return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">¿Buscas con quién jugar?</h2>' +
+      '<p>Toca un bloque: <b class="dot"></b> naranjo si hay jugadores esperando.</p>' +
+      (days.length ? '<div class="days8">' + days.map((d) => {
+        const t = parse(d.date);
+        return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? 'hoy' : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span>' + cell(d, 'am') + cell(d, 'pm') + '</div>';
+      }).join('') + '</div>' : '<p class="small">Cargando…</p>') +
+      '</section>';
+  }
+
+  // Partidos que buscan jugadores en un día y mitad del día.
+  function vBlock() {
+    const b = S.block;
+    if (!b) return '';
+    let h = '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ Inicio</button></p>' +
+      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF[b.half] + '</h1>';
+    if (!S.blockGames) return h + '<p class="muted">Cargando…</p>';
+    if (!S.blockGames.length) {
+      h += '<p class="muted">Nadie busca jugadores ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + ' de ese día. Abre tú un partido y otros podrán sumarse.</p>';
+    } else {
+      h += '<p class="muted">' + (S.blockGames.length === 1 ? '1 partido busca jugadores.' : S.blockGames.length + ' partidos buscan jugadores.') + ' Toca uno para sumarte.</p>' +
+        '<ul class="list open-list">' + S.blockGames.map((g) =>
+          '<li><button type="button" class="row open" data-a="pickOpen" data-id="' + esc(g.id) + '"><time>' + g.time + '</time><span class="txt"><span class="name">' + esc(g.sport.name) + ' · ' + esc(g.venue.name) + '</span>' +
+          '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">Juegan ' + who(g.players) + '</span></span><span class="go">Unirme</span></button></li>').join('') + '</ul>';
+    }
+    h += '<h2 class="label">Crear un partido ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + '</h2>' +
+      (S.sports.length ? '<div class="card create">' + sportPicker('createIn', 'Te mostramos las horas libres de ese día.', 'Ver horas libres') + '</div>'
+        : '<p class="muted">Todavía no hay deportes disponibles.</p>');
+    return h;
+  }
+
+  async function loadOpen() { S.open = (await get('/api/open')) || []; }
 
   function vVenue() {
     if (!S.offers.length) return '<p>Ese deporte ya no está disponible.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Volver al inicio</button></div>';
     return '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ Deportes</button></p><h1 class="h">¿Dónde quieres jugar?</h1><ul class="list">' + S.offers.map((o, i) =>
       '<li><button type="button" class="row" data-a="offer" data-i="' + i + '"><span><span class="name">' + esc(o.venue.name) + '</span><span class="meta">' +
-      esc(o.venue.address || '') + (o.venue.address ? '. ' : '') + plural(o.courts, 'cancha operativa', 'canchas operativas') +
+      esc(o.venue.address || '') + (coord() ? '' : (o.venue.address ? '. ' : '') + plural(o.courts, 'cancha operativa', 'canchas operativas')) +
       (o.open_games ? '. ' + (o.open_games === 1 ? '1 partido busca jugadores' : o.open_games + ' partidos buscan jugadores') : '') +
       '</span></span><span class="go">Elegir</span></button></li>').join('') + '</ul>';
   }
@@ -173,18 +250,21 @@
       '<div class="cal">' + cells + '</div><p class="legend"><i></i> Hay alguien buscando partido ese día</p>' +
       '<p class="small muted">Puedes agendar hasta el ' + fecha(S.today.last_bookable) + '.</p>';
     if (S.date) {
-      h += '<h2 id="dia">' + cap(fecha(S.date)) + '</h2>';
-      h += S.slots.length ? '<ul class="slots">' + S.slots.map((s) => {
+      const half = S.preset && S.preset.date === S.date ? S.preset.half : null;
+      const slots = half ? S.slots.filter((s) => halfOf(s.time) === half) : S.slots;
+      h += '<h2 id="dia">' + cap(fecha(S.date)) + (half ? ' · ' + HALF[half] : '') + '</h2>';
+      if (half) h += '<p class="small"><button type="button" class="linkbtn" data-a="allDay">Ver todo el día</button></p>';
+      h += slots.length ? '<ul class="slots">' + slots.map((s) => {
         const o = [];
         s.open_games.forEach((g) => {
           if (g.mine) o.push('<div class="opt mine"><span>Tu partido: ' + faltan(g.missing) + '</span></div>');
           else o.push('<button type="button" class="opt join" data-a="pickGame" data-id="' + esc(g.id) + '"><span>' + who(g.players) + ': ' + faltan(g.missing) +
             '<br><small>Busca ' + levelsText(g.accepted_levels) + '</small></span><b>Unirme</b></button>');
         });
-        if (s.free_courts) o.push('<button type="button" class="opt" data-a="pickTime" data-t="' + s.time + '"><span>' + plural(s.free_courts, 'cancha libre', 'canchas libres') + '</span><b>Abrir partido</b></button>');
+        if (s.free_courts) o.push('<button type="button" class="opt" data-a="pickTime" data-t="' + s.time + '"><span>' + (coord() ? 'Hora disponible' : plural(s.free_courts, 'cancha libre', 'canchas libres')) + '</span><b>Abrir partido</b></button>');
         if (!o.length) o.push('<div class="opt full">Completo</div>');
         return '<li class="slot"><time>' + s.time + '</time><div class="opts">' + o.join('') + '</div></li>';
-      }).join('') + '</ul>' : '<p class="muted">No quedan horas disponibles ese día.</p>';
+      }).join('') + '</ul>' : '<p class="muted">No quedan horas disponibles ' + (half ? 'en la ' + HALF[half] + ' de ese día.' : 'ese día.') + '</p>';
     } else h += '<p class="muted" style="margin-top:1rem">Toca un día para ver las horas disponibles.</p>';
     return h;
   }
@@ -208,7 +288,7 @@
     let h = '<p class="crumbs"><button type="button" data-a="back">‹ Volver</button></p><h1 class="h">' + (g ? 'Unirme al partido' : 'Abrir partido') + '</h1>' +
       '<div class="card"><dl class="kv"><dt>Deporte</dt><dd>' + esc(sport.name) + '</dd><dt>Lugar</dt><dd>' + esc(venue.name) + '</dd><dt>Cuándo</dt><dd>' + cap(fecha(date)) + ', ' + time + '</dd>' +
       (g ? '<dt>Ya están</dt><dd>' + who(g.players) + '</dd><dt>Busca</dt><dd>' + cap(levelsText(g.accepted_levels)) + ', ' + faltan(g.missing) + '</dd>' : '') + '</dl>' +
-      (g ? '' : '<p class="small muted">La cancha se asigna cuando el partido se completa.</p>') + '</div>' +
+      (g ? '' : '<p class="small muted">' + (coord() ? 'Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.' : 'La cancha se asigna cuando el partido se completa.') + '</p>') + '</div>' +
       '<form data-f="play" novalidate>' +
       '<label class="f" for="ini">Tus iniciales</label><input id="ini" name="initials" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="JR" value="' + esc(prefs.initials || '') + '">' +
       levelRadios(sport, g ? g.accepted_levels : null, myLevel);
@@ -222,7 +302,7 @@
     }
     h += '<label class="f" for="email">Email de contacto</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="tu@correo.cl" value="' + esc(prefs.email || '') + '">' +
       '<label class="f" for="wa">WhatsApp <small>(opcional)</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' +
-      '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>Avísenme también por WhatsApp</label></div>' +
+      (WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>Avísenme también por WhatsApp</label></div>' : '') +
       '<p class="small muted">Tu contacto solo se comparte con quienes jueguen contigo, cuando el partido se confirme.</p>' +
       errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? 'Enviando…' : g ? 'Unirme al partido' : 'Publicar partido') + '</button></div></form>';
     return h;
@@ -239,8 +319,9 @@
     let h = '<div class="card"><p>' + STATUS_TAG[g.status](g) + '</p>' +
       '<h3>' + esc(g.sport.name) + ', ' + fecha(g.date) + ' a las ' + g.time + '</h3>' +
       '<dl class="kv"><dt>Lugar</dt><dd>' + esc(g.venue.name) + (g.venue.address ? ', ' + esc(g.venue.address) : '') + '</dd>' +
-      '<dt>Cancha</dt><dd>' + (g.court ? esc(g.court.name) + (g.court.surface ? ', ' + esc(g.court.surface.toLowerCase()) : '') + (g.court.notes ? '. ' + esc(g.court.notes) : '')
-        : g.status === 'abierto' ? 'Se asigna cuando se complete' : g.status === 'sin_cancha' ? 'No quedó cancha libre' : '—') + '</dd>' +
+      (g.court ? '<dt>Cancha</dt><dd>' + esc(g.court.name) + (g.court.surface ? ', ' + esc(g.court.surface.toLowerCase()) : '') + (g.court.notes ? '. ' + esc(g.court.notes) : '') + '</dd>'
+        : coord() ? (g.status === 'confirmado' ? '<dt>Cancha</dt><dd>Resérvenla con el club</dd>' : '')
+        : '<dt>Cancha</dt><dd>' + (g.status === 'abierto' ? 'Se asigna cuando se complete' : g.status === 'sin_cancha' ? 'No quedó cancha libre' : '—') + '</dd>') +
       '<dt>Juegan</dt><dd>' + who(g.players) + '</dd>' +
       (g.status === 'abierto' ? '<dt>Busca</dt><dd>' + cap(levelsText(g.accepted_levels)) + '</dd>' : '') + '</dl>';
     const map = (g.court && g.court.maps_url) || g.venue.maps_url;
@@ -270,8 +351,9 @@
     const g = S.done;
     if (!g) return '<p>Ese partido ya no existe.</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">Volver al inicio</button></div>';
     const title = g.status === 'confirmado' ? '¡Partido confirmado!' : g.status === 'sin_cancha' ? 'Partido completo, sin cancha' : 'Partido publicado';
-    const text = g.status === 'confirmado' ? 'Ya tienen cancha asignada. Estos son los datos.'
+    const text = g.status === 'confirmado' ? (g.court ? 'Ya tienen cancha asignada. Estos son los datos.' : '¡Ya están todos! Pónganse de acuerdo y reserven la cancha con el club.')
       : g.status === 'sin_cancha' ? 'Se completó, pero ya no quedan canchas libres a esa hora. Les avisaremos para elegir otro turno.'
+      : coord() ? 'Cuando se complete, te avisamos y les pasamos el contacto de todos para que reserven la cancha con el club.'
       : 'Cuando se complete, les asignamos la primera cancha libre de ese turno y te avisamos.';
     return '<h1 class="h">' + title + '</h1><p>' + text + '</p>' + gameCard(g, false) +
       '<div class="actions"><button type="button" class="btn" data-a="go" data-v="mine">Ver mis partidos</button><button type="button" class="btn ghost" data-a="go" data-v="home">Agendar otro</button></div>';
@@ -383,6 +465,7 @@
       case 'done': return vDone();
       case 'search': return vSearch();
       case 'mine': return vMine();
+      case 'block': return vBlock();
       case 'token': return vToken();
       default: return vHome();
     }
@@ -412,7 +495,8 @@
     const n = activeMine();
     $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="Peloteo, ir al inicio" width="648" height="120"></button><nav aria-label="Principal">' +
       '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">Buscar</span></button>' +
-      '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">Mis partidos' + (n ? '<b aria-label="' + n + ' activos">' + n + '</b>' : '') + '</button></nav>';
+      '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">Mis partidos' + (n ? '<b aria-label="' + n + ' activos">' + n + '</b>' : '') + '</button>' +
+      '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">Configuración</span></a></nav>';
   }
 
   // ---------------- formularios ----------------
@@ -444,7 +528,7 @@
     prefs[key] = level;
     LS.set('peloteo_prefs', prefs);
 
-    const player = { initials: ini, level, email: d.email.trim(), whatsapp: d.whatsapp || '', whatsapp_opt_in: !!d.whatsapp_opt_in };
+    const player = { initials: ini, level, email: d.email.trim(), whatsapp: d.whatsapp || '', whatsapp_opt_in: WHATSAPP_NOTICES && !!d.whatsapp_opt_in };
     S.busy = true; S.err = ''; render();
     const r = S.game
       ? await api('POST', '/api/games/' + encodeURIComponent(S.game.id) + '/join', { player })
@@ -457,7 +541,7 @@
       const code = r.data.code;
       if (code === 'turno_ocupado' || code === 'encuentro_completo' || code === 'turno_cerrado' || code === 'encuentro_cancelado' || code === 'encuentro_no_existe') {
         toast(r.data.error || 'Ese turno ya no está disponible. Elige otro.');
-        const back = S.fromSearch ? 'search' : 'calendar';
+        const back = S.fromSearch ? 'search' : S.fromBlock ? 'block' : 'calendar';
         S.game = null;
         if (back === 'calendar' && S.date) { S.view = 'calendar'; await Promise.all([loadMonth(), loadDay()]); render(); }
         else go(back);
@@ -471,8 +555,11 @@
     go('done');
   }
 
+  function rememberSport(key) { prefs = Object.assign({}, prefs, { sport: key }); LS.set('peloteo_prefs', prefs); }
   const submit = {
     play: submitPlay,
+    create(d) { if (!d.sport) return; rememberSport(d.sport); S.preset = null; chooseSport(d.sport); },
+    createIn(d) { if (!d.sport) return; rememberSport(d.sport); S.preset = { date: S.block.date, half: S.block.half }; S.fromBlock = false; chooseSport(d.sport); },
     async search(d) {
       const q = S.search;
       Object.assign(q, { from: d.from, to: d.to, t1: d.t1, t2: d.t2, level: Number(d.level) || null });
@@ -489,7 +576,18 @@
 
   // ---------------- acciones ----------------
   const act = {
-    go(d) { S.fromSearch = false; go(d.v); },
+    go(d) { S.fromSearch = false; S.fromBlock = false; go(d.v); },
+    block(d) { S.block = { date: d.d, half: d.h }; S.fromBlock = false; go('block'); },
+    allDay() { S.preset = null; render(); },
+    async pickOpen(d) {
+      const g = (S.blockGames || []).find((x) => x.id === d.id); if (!g) return;
+      const offers = (await get('/api/venues?sport=' + encodeURIComponent(g.sport.key))) || [];
+      const offer = offers.find((o) => o.sport.id === g.sport.id);
+      if (!offer) { toast('Ese partido ya no está disponible.'); go('block'); return; }
+      S.offers = offers; S.offer = offer; S.sportKey = g.sport.key;
+      S.game = g; S.date = g.date; S.time = g.time; S.fromSearch = false; S.fromBlock = true;
+      go('form');
+    },
     sport(d) { chooseSport(d.k); },
     offer(d) { chooseOffer(S.offers[Number(d.i)]); },
     toVenues() { if (S.offers.length > 1) go('venue'); else go('home'); },
@@ -502,10 +600,10 @@
       S.date = d.d; S.slots = []; render(); await loadDay(); render();
       const el = document.getElementById('dia'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
-    pickTime(d) { S.time = d.t; S.game = null; S.fromSearch = false; go('form'); },
+    pickTime(d) { S.time = d.t; S.game = null; S.fromSearch = false; S.fromBlock = false; go('form'); },
     pickGame(d) {
       for (const s of S.slots) { const g = s.open_games.find((x) => x.id === d.id); if (g) { S.game = g; S.time = g.time; break; } }
-      S.fromSearch = false; go('form');
+      S.fromSearch = false; S.fromBlock = false; go('form');
     },
     pickResult(d) {
       const g = (S.results || []).find((x) => x.id === d.id); if (!g) return;
@@ -513,7 +611,7 @@
       S.offer = offer; S.sportKey = S.search.sportKey; S.game = g; S.date = g.date; S.time = g.time; S.fromSearch = true;
       go('form');
     },
-    back() { if (S.fromSearch) go('search'); else act.toCalendar(); },
+    back() { if (S.fromSearch) go('search'); else if (S.fromBlock) go('block'); else act.toCalendar(); },
     async openFromSearch() {
       const offer = S.searchOffers.find((o) => o.sport.id === S.search.sportId);
       if (!offer) { go('home'); return; }
@@ -571,9 +669,9 @@
   });
 
   (async function boot() {
-    const [today, sports] = await Promise.all([get('/api/today'), get('/api/sports')]);
+    const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
     if (!today) { $('#app').innerHTML = '<div class="card"><h2>No pudimos cargar las canchas</h2><p class="muted">Revisa tu conexión y vuelve a intentarlo.</p><div class="actions"><button class="btn" onclick="location.reload()">Reintentar</button></div></div>'; return; }
-    S.today = today; S.sports = sports || [];
+    S.today = today; S.sports = sports || []; S.open = open || [];
     if (!fromHash()) { S.view = 'home'; render(); }
     await loadMine(); render();
   })();

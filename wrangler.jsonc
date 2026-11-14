@@ -26,6 +26,10 @@
     // En localhost los correos se muestran en la consola y no se envían.
     "EMAIL_MODE": "resend",
     "SITE_URL": "https://peloteo.cl",
-    "MAIL_FROM": "Peloteo <avisos@peloteo.cl>"
+    "MAIL_FROM": "Peloteo <avisos@peloteo.cl>",
+    // Canchas: "coordinacion" mientras Peloteo no esté conectado al sistema de
+    // reservas de los clubes (solo se muestran deporte, lugar y hora; un partido
+    // completo se confirma sin cancha). "reserva" asigna una cancha libre.
+    "COURT_MODE": "coordinacion"
   }
 }

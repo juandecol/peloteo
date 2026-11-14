@@ -330,7 +330,7 @@ test("configuración: editar deporte reemplaza sus categorías", async () => {
 
 async function confirmedAt(t: ReturnType<typeof setup>, time = "18:00") {
   const player = { initials: "MT", level: 3, email: "mt@example.com" };
-  const a = await createGame(t.db, { sport_id: "D-TEN01", date: "2026-11-17", time, accepted_levels: [3], player }, "V-1", t.now);
+  const a = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time, accepted_levels: [3], player }, "V-1", t.now);
   return joinGame(t.db, a.game.id, player, "V-2", t.now);
 }
 
@@ -367,7 +367,7 @@ test("canchas: se bloquea un cambio que deja fuera un encuentro confirmado", asy
 test("canchas: los encuentros abiertos (sin cancha) no bloquean cambios", async () => {
   const t = await ready();
   const player = { initials: "MT", level: 3, email: "mt@example.com" };
-  await createGame(t.db, { sport_id: "D-TEN01", date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
+  await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
   assert.equal((await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, status: "cerrada" })).status, 200);
 });
 
@@ -417,7 +417,7 @@ test("eliminar: sin encuentros futuros se elimina sin confirmación", async () =
 test("eliminar un lugar oculta sus deportes y canchas del público", async () => {
   const t = await ready();
   const player = { initials: "MT", level: 3, email: "mt@example.com" };
-  const open = await createGame(t.db, { sport_id: "D-TEN01", date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
+  const open = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
   const first = await t.req("DELETE", "/admin/api/venues/L-SM001");
   assert.equal(first.status, 409);
   assert.equal((await t.req("DELETE", "/admin/api/venues/L-SM001?confirm=1")).status, 200);
@@ -428,7 +428,7 @@ test("eliminar un lugar oculta sus deportes y canchas del público", async () =>
   assert.ok(!(await t.req("GET", "/admin/api/venues")).json.some((v: any) => v.id === "L-SM001"));
   assert.deepEqual(await getDayAvailability(t.db, "D-TEN01", "2026-11-17", t.now), []);
   await assert.rejects(
-    createGame(t.db, { sport_id: "D-TEN01", date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-3", t.now),
+    createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-3", t.now),
     (e: unknown) => e instanceof MatchError && e.code === "deporte_no_existe",
   );
 });

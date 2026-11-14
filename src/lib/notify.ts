@@ -2,7 +2,7 @@
 // con canales intercambiables. El canal de registro deja constancia en el log
 // del Worker (sin datos de contacto); el de correo está en email.ts.
 
-import { getDayAvailability } from "./availability.ts";
+import { getDayAvailability, type CourtMode } from "./availability.ts";
 import type { Db } from "./db.ts";
 import { addDays, isDateBookable, toMinutes, type LocalNow } from "./time.ts";
 
@@ -63,6 +63,8 @@ export interface NoticeGame {
   cause?: CancelCause;
   /** Solo en partido_sin_cancha. */
   suggestions?: SuggestedSlot[];
+  /** Modo de canchas: en "coordinacion" los textos piden reservar con el club. */
+  court_mode?: CourtMode;
 }
 
 export interface Channel {
@@ -107,12 +109,13 @@ export async function suggestSlots(
   db: Db,
   game: { sport_id: string; date: string; time: string },
   now: LocalNow,
+  mode: CourtMode = "reserva",
 ): Promise<SuggestedSlot[]> {
   const found: (SuggestedSlot & { dist: number })[] = [];
   for (let i = 0; i < SUGGESTION_DAYS; i++) {
     const date = addDays(game.date, i);
     if (!isDateBookable(date, now)) continue;
-    for (const s of await getDayAvailability(db, game.sport_id, date, now)) {
+    for (const s of await getDayAvailability(db, game.sport_id, date, now, null, mode)) {
       if (s.free_courts === 0 || (date === game.date && s.time === game.time)) continue;
       found.push({
         date,
@@ -159,6 +162,7 @@ export interface DeliverOptions {
   channels?: Channel[];
   /** Hora local; necesaria para sugerir turnos a los encuentros sin cancha. */
   now?: LocalNow;
+  mode?: CourtMode;
 }
 
 /** Carga jugadores y encuentros de una lista de avisos y los envía. */
@@ -170,7 +174,8 @@ export async function deliverNotices(db: Db, notices: PendingNotice[], options: 
     const game = await loadNoticeGame(db, n.game_id);
     if (!game) continue;
     if (n.cause) game.cause = n.cause;
-    if (n.event === "partido_sin_cancha" && options.now) game.suggestions = await suggestSlots(db, game, options.now);
+    game.court_mode = options.mode ?? "reserva";
+    if (n.event === "partido_sin_cancha" && options.now) game.suggestions = await suggestSlots(db, game, options.now, game.court_mode);
     for (const p of game.players.filter((p) => n.player_ids.includes(p.id))) {
       await notify(n.event, p, game, channels);
       sent++;

@@ -237,3 +237,49 @@ h1.h{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:1.5rem;
 @media (max-width:360px){
   .brand img{height:1.45rem}
 }
+
+/* ---------------------------------------------------------------
+   Inicio: calendario horizontal de 8 días con bloques AM y PM.
+   Blanco = nadie busca jugadores; naranjo = hay partidos esperando.
+   --------------------------------------------------------------- */
+:root{--naranjo:#EE8A24; --naranjo-ink:#1A0E02}
+.week{margin-top:1.1rem}
+.week .dot{display:inline-block;width:.7rem;height:.7rem;border-radius:3px;background:var(--naranjo);vertical-align:-.05rem;margin:0 .1rem}
+.days8{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:.3rem;margin:.6rem 0 .2rem}
+.day8{display:flex;flex-direction:column;align-items:stretch;gap:.25rem;text-align:center;min-width:0}
+.day8 .dl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:.8}
+.day8 .dn{font-weight:800;font-size:1rem;font-variant-numeric:tabular-nums;line-height:1}
+.day8.today .dn{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
+.blk{min-height:2.75rem;padding:0;border-radius:8px;border:1.5px solid rgba(11,22,17,.25);background:#FFFFFF;color:#14251D;
+  font-size:.68rem;font-weight:800;letter-spacing:.02em}
+.blk.on{background:var(--naranjo);border-color:var(--naranjo);color:var(--naranjo-ink)}
+.cta .blk:focus-visible{outline:3px solid var(--ball-ink);outline-offset:1px}
+.week .or{margin:.7rem 0 .4rem;font-weight:700;text-align:center}
+.week .btn.dark{display:flex;width:100%}
+
+/* Lista de partidos de un bloque */
+.row.open{justify-content:flex-start;gap:.9rem}
+.row.open time{flex:none;font-stretch:112%;font-weight:800;font-size:1.15rem;font-variant-numeric:tabular-nums;min-width:3.2rem}
+.row.open .name{font-size:1rem}
+.linkbtn{background:none;border:0;padding:.3rem 0;color:var(--court);text-decoration:underline;font-weight:700}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .linkbtn{color:#7FD3B0}}
+:root[data-theme="dark"] .linkbtn{color:#7FD3B0}
+
+/* Configuración en la barra superior */
+.bar nav .navlink{display:inline-flex;align-items:center;gap:.4rem;min-height:2.75rem;padding:0 .8rem;border-radius:99px;
+  color:inherit;text-decoration:none;font-weight:600;font-size:.9rem;white-space:nowrap}
+.bar nav .navlink svg{flex:none}
+@media (max-width:640px){
+  .bar nav .navlink .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  .bar nav .navlink{padding:0 .55rem}
+}
+@media (max-width:360px){.bar nav .navlink{padding:0 .4rem}}
+
+/* Tarjeta blanca "Crea un partido" (en modo claro y oscuro) con el desplegable de deportes. */
+.card.create{background:#FFFFFF;color:#14251D;border-color:#D5DED7;margin-top:1rem;padding:1rem 1.1rem 1.1rem}
+.card.create h2{margin:0 0 .2rem;font-stretch:112%;font-weight:800;font-size:1.25rem;line-height:1.15}
+.card.create .muted{color:#4F6157}
+.card.create select{background:#FFFFFF;color:#14251D;border-color:#B9C7BC;color-scheme:light}
+.card.create .btn{background:#14251D;color:#FFFFFF}
+.card.create :focus-visible{outline-color:#1E6B4F}
+.picker label.f{margin-top:.6rem}

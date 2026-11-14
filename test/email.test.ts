@@ -62,6 +62,7 @@ const player = (initials: string, extra: Record<string, unknown> = {}) => ({
 
 const openTenis = (initials: string, time = "18:00") => ({
   sport_id: "D-TEN01",
+  capacity: 2, // tenis admite singles (2) o dobles (4): migración 0008
   date: DAY,
   time,
   accepted_levels: [2, 3, 4],

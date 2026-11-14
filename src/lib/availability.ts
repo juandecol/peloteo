@@ -4,6 +4,7 @@
 // confirmado a esa hora. Los encuentros abiertos no ocupan cancha.
 
 import { placeholders, type Db } from "./db.ts";
+import { asWho, isMine, type Who } from "./identity.ts";
 import {
   dayOfWeek,
   datesOfMonth,
@@ -27,6 +28,18 @@ export interface Court {
 }
 
 export type GameStatus = "abierto" | "sin_cancha" | "confirmado";
+
+/**
+ * Cómo se manejan las canchas:
+ * - "reserva": Peloteo conoce la ocupación real; al completarse un partido se le
+ *   asigna una cancha libre concreta.
+ * - "coordinacion" (modo actual, mientras no haya conexión con el sistema de los
+ *   clubes): las canchas configuradas solo definen el horario y cuántos partidos
+ *   pueden confirmarse a la vez; un partido completo se confirma sin cancha y los
+ *   jugadores la reservan con el club.
+ */
+export type CourtMode = "reserva" | "coordinacion";
+export const courtMode = (value: unknown): CourtMode => (value === "coordinacion" ? "coordinacion" : "reserva");
 
 /** Jugador tal como se muestra públicamente: solo iniciales y nivel. */
 export interface PublicPlayer {
@@ -142,11 +155,15 @@ export function dayAvailability(
   date: string,
   now: LocalNow,
   blocks: Block[] = [],
+  mode: CourtMode = "reserva",
 ): Slot[] {
   if (!isDateBookable(date, now)) return [];
   const taken = new Set(
     games.filter((g) => g.status === "confirmado" && g.court_id).map((g) => g.court_id + "|" + g.time),
   );
+  // Coordinación: los confirmados no tienen cancha; ocupan un cupo del turno.
+  const confirmedAt = new Map<string, number>();
+  for (const g of games) if (g.status === "confirmado") confirmedAt.set(g.time, (confirmedAt.get(g.time) ?? 0) + 1);
   const slots = new Map<string, Slot>();
   for (const court of courts) {
     for (const time of courtSlots(court, date)) {
@@ -156,8 +173,12 @@ export function dayAvailability(
         slot = { time, free_courts: 0, open_games: [], full: false };
         slots.set(time, slot);
       }
-      if (!taken.has(court.id + "|" + time) && !isSlotBlocked(blocks, court, date, time)) slot.free_courts++;
+      if (isSlotBlocked(blocks, court, date, time)) continue;
+      if (mode === "coordinacion" || !taken.has(court.id + "|" + time)) slot.free_courts++;
     }
+  }
+  if (mode === "coordinacion") {
+    for (const slot of slots.values()) slot.free_courts = Math.max(0, slot.free_courts - (confirmedAt.get(slot.time) ?? 0));
   }
   for (const g of games) {
     const slot = slots.get(g.time);
@@ -175,11 +196,12 @@ export function monthSummary(
   month: string,
   now: LocalNow,
   blocks: Block[] = [],
+  mode: CourtMode = "reserva",
 ): DaySummary[] {
   return datesOfMonth(month)
     .filter((date) => isDateBookable(date, now))
     .map((date) => {
-      const slots = dayAvailability(courts, gamesByDate.get(date) ?? [], date, now, blocks);
+      const slots = dayAvailability(courts, gamesByDate.get(date) ?? [], date, now, blocks, mode);
       const open = slots.reduce((n, s) => n + s.open_games.length, 0);
       return { date, available: slots.some((s) => !s.full), open_games: open };
     });
@@ -232,19 +254,21 @@ interface PlayerRow {
   initials: string;
   level: number;
   visitor_id: string;
+  user_id: string | null;
 }
 
 /** Arma la vista pública de una lista de encuentros (sin datos de contacto). */
 export async function toPublicGames(
   db: Db,
   rows: GameRow[],
-  visitorId?: string | null,
+  visitor?: string | Who | null,
 ): Promise<PublicGame[]> {
   if (rows.length === 0) return [];
+  const who = asWho(visitor);
   const ids = rows.map((r) => r.id);
   const { results: players } = await db
     .prepare(
-      `SELECT game_id, initials, level, visitor_id FROM players
+      `SELECT game_id, initials, level, visitor_id, user_id FROM players
        WHERE game_id IN (${placeholders(ids.length)})
        ORDER BY rowid`,
     )
@@ -262,7 +286,7 @@ export async function toPublicGames(
       status: g.status,
       players: own.map((p) => ({ initials: p.initials, level: p.level })),
       missing: Math.max(0, g.capacity - own.length),
-      mine: !!visitorId && own.some((p) => p.visitor_id === visitorId),
+      mine: own.some((p) => isMine(p, who)),
     };
   });
 }
@@ -272,7 +296,7 @@ async function loadGames(
   sportId: string,
   from: string,
   to: string,
-  visitorId?: string | null,
+  visitorId?: string | Who | null,
 ): Promise<PublicGame[]> {
   const { results } = await db
     .prepare(
@@ -291,13 +315,14 @@ export async function getDayAvailability(
   sportId: string,
   date: string,
   now: LocalNow,
-  visitorId?: string | null,
+  visitorId?: string | Who | null,
+  mode: CourtMode = "reserva",
 ): Promise<Slot[]> {
   if (!isDateBookable(date, now)) return [];
   const courts = await loadCourts(db, sportId);
   const games = await loadGames(db, sportId, date, date, visitorId);
   const blocks = await loadBlocks(db, sportId, date, date);
-  return dayAvailability(courts, games, date, now, blocks);
+  return dayAvailability(courts, games, date, now, blocks, mode);
 }
 
 /** Resumen por día de un mes "YYYY-MM". */
@@ -306,11 +331,12 @@ export async function getMonthSummary(
   sportId: string,
   month: string,
   now: LocalNow,
+  mode: CourtMode = "reserva",
 ): Promise<DaySummary[]> {
   const courts = await loadCourts(db, sportId);
   const games = await loadGames(db, sportId, month + "-01", month + "-31");
   const blocks = await loadBlocks(db, sportId, month + "-01", month + "-31");
   const byDate = new Map<string, PublicGame[]>();
   for (const g of games) byDate.set(g.date, [...(byDate.get(g.date) ?? []), g]);
-  return monthSummary(courts, byDate, month, now, blocks);
+  return monthSummary(courts, byDate, month, now, blocks, mode);
 }

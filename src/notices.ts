@@ -7,9 +7,10 @@
 // - Sin EMAIL_MODE (pruebas): solo el registro en el log.
 
 import type { AppBindings, AppOptions } from "./admin.ts";
-import { consoleChannel, resendChannel, type MailConfig } from "./lib/email.ts";
+import { consoleChannel, resendChannel, sendResendMail, type Email, type MailConfig } from "./lib/email.ts";
 import { deliverNotices, logChannel, type Channel, type PendingNotice } from "./lib/notify.ts";
 import type { LocalNow } from "./lib/time.ts";
+import { courtMode } from "./lib/availability.ts";
 
 export const DEFAULT_SITE = "https://peloteo.cl";
 export const DEFAULT_FROM = "Peloteo <avisos@peloteo.cl>";
@@ -35,6 +36,30 @@ export function channelsFor(env: AppBindings, requestUrl: string): Channel[] {
   return [logChannel, resendChannel(env.RESEND_API_KEY, config)];
 }
 
+/** Dirección del sitio para los enlaces: en local, el servidor de desarrollo. */
+export function siteFor(env: AppBindings, requestUrl: string): string {
+  return isLocalHost(requestUrl) ? new URL(requestUrl).origin : (env.SITE_URL ?? DEFAULT_SITE).replace(/\/+$/, "");
+}
+
+/** Envía un correo suelto (por ejemplo, el enlace de ingreso) con las mismas reglas de entorno. */
+export async function sendMail(
+  c: { env: AppBindings; req: { url: string } },
+  to: string,
+  mail: Email,
+  options: AppOptions = {},
+): Promise<void> {
+  if (options.mailer) return options.mailer(to, mail);
+  const env = c.env;
+  const local = isLocalHost(c.req.url);
+  const from = env.MAIL_FROM ?? DEFAULT_FROM;
+  if (!env.EMAIL_MODE || env.EMAIL_MODE === "ninguno") return;
+  if (local || env.EMAIL_MODE === "consola" || !env.RESEND_API_KEY) {
+    console.info(["──────── correo (no enviado) ────────", `Para: ${to}`, `Asunto: ${mail.subject}`, "", mail.text.trimEnd()].join("\n"));
+    return;
+  }
+  await sendResendMail(env.RESEND_API_KEY, from, to, mail);
+}
+
 /** Envía los avisos. Si hay ExecutionContext, después de responder; si no, espera. */
 export async function sendNotices(
   c: { env: AppBindings; req: { url: string }; readonly executionCtx: { waitUntil(p: Promise<unknown>): void } },
@@ -44,7 +69,7 @@ export async function sendNotices(
 ): Promise<void> {
   if (notices.every((n) => n.player_ids.length === 0)) return;
   const channels = options.channels ?? channelsFor(c.env, c.req.url);
-  const work = deliverNotices(c.env.DB, notices, { channels, now }).then(
+  const work = deliverNotices(c.env.DB, notices, { channels, now, mode: courtMode(c.env.COURT_MODE) }).then(
     () => undefined,
     (err) => console.error("Error al enviar avisos:", err),
   );

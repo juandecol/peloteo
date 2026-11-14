@@ -30,6 +30,7 @@ const me = (over: Partial<PlayerInput> = {}): PlayerInput => ({
 /** Partido de tenis (capacidad 2) el martes a las 18:00, acepta todos los niveles. */
 const tenis = (over: Partial<CreateGameInput> = {}): CreateGameInput => ({
   sport_id: "D-TEN01",
+  capacity: 2, // tenis admite singles (2) o dobles (4): migración 0008
   date: DAY,
   time: "18:00",
   accepted_levels: ALL,
@@ -148,12 +149,15 @@ test("abrir: un partido abierto no le quita la cancha a otros", async () => {
   assert.equal(slot.open_games.length, 3);
 });
 
-test("abrir: pádel permite elegir 2 o 4 jugadores; tenis solo 2", async () => {
+test("abrir: pádel y tenis permiten elegir singles (2) o dobles (4); hay que elegir", async () => {
   const db = emptyGamesDb();
   assert.equal((await createGame(db, padel(4), "V-1", now)).game.capacity, 4);
   assert.equal((await createGame(db, padel(2), "V-2", now)).game.capacity, 2);
-  await rejects(createGame(db, tenis({ sport_id: "D-PAD01", time: "18:30" }), "V-3", now), "datos_invalidos");
-  await rejects(createGame(db, tenis({ capacity: 4 }), "V-3", now), "datos_invalidos");
+  await rejects(createGame(db, tenis({ sport_id: "D-PAD01", time: "18:30", capacity: undefined }), "V-3", now), "datos_invalidos");
+  // Tenis en dobles (migración 0008).
+  assert.equal((await createGame(db, tenis({ capacity: 4 }), "V-3", now)).game.capacity, 4);
+  await rejects(createGame(db, tenis({ capacity: 3 }), "V-4", now), "datos_invalidos");
+  await rejects(createGame(db, tenis({ capacity: undefined }), "V-4", now), "datos_invalidos");
 });
 
 test("abrir: solo si queda al menos una cancha libre en el turno", async () => {
@@ -215,7 +219,7 @@ test("concurrencia: el índice único impide dos confirmados en la misma cancha 
   db.raw.prepare(insert).run("E-BBBBB");
 });
 
-test("base de datos: confirmado exige cancha; abierto y sin cancha no la tienen", () => {
+test("base de datos: abierto y sin cancha no tienen cancha; confirmado puede no tenerla (modo coordinación)", () => {
   const db = emptyGamesDb();
   const ins = (id: string, court: string | null, status: string) =>
     db.raw
@@ -224,7 +228,7 @@ test("base de datos: confirmado exige cancha; abierto y sin cancha no la tienen"
          VALUES (?, 'L-SM001', 'D-TEN01', ?, '2026-11-17', '18:00', 2, '3', ?)`,
       )
       .run(id, court, status);
-  assert.throws(() => ins("E-AAAAA", null, "confirmado"), /CHECK constraint failed/);
+  ins("E-AAAAA", null, "confirmado"); // migración 0007
   assert.throws(() => ins("E-BBBBB", "C-T1SM1", "abierto"), /CHECK constraint failed/);
   assert.throws(() => ins("E-CCCCC", "C-T1SM1", "sin_cancha"), /CHECK constraint failed/);
   ins("E-DDDDD", null, "abierto");
