@@ -153,6 +153,11 @@
   };
   const HALF = { am: 'mañana', pm: 'tarde' };
   const halfOf = (time) => (time < '12:00' ? 'am' : 'pm');
+  let todayLoadedAt = Date.now();
+  const nowHHMM = () => {
+    const m = Math.min(24 * 60 - 1, S.today.minutes + Math.floor((Date.now() - todayLoadedAt) / 60000));
+    return pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  };
   const diaCorto = (s) => { const d = parse(s); return DIAS[d.getDay()].slice(0, 2); };
   const icon = (name, size) => '<svg width="' + (size || 24) + '" height="' + (size || 24) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + ICONS[name] + '</svg>';
   const sportIcon = (key) => icon(/padel/.test(key) ? 'padel' : /tenis/.test(key) ? 'tenis' : 'pelota', 26);
@@ -188,13 +193,13 @@
     const cell = (d, half) => {
       const n = d[half];
       const label = cap(fecha(d.date)) + ', ' + HALF[half] + ': ' + (n ? (n === 1 ? '1 partido busca jugadores' : n + ' partidos buscan jugadores') : 'nadie busca jugadores todavía');
-      return '<button type="button" class="blk' + (n ? ' on' : '') + '" data-a="block" data-d="' + d.date + '" data-h="' + half + '" aria-label="' + label + '">' + half.toUpperCase() + '</button>';
+      return '<button type="button" class="blk ' + half + (n ? ' on' : '') + '" data-a="block" data-d="' + d.date + '" data-h="' + half + '" aria-label="' + label + '">' + half.toUpperCase() + '</button>';
     };
     return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">¿Buscas con quién jugar?</h2>' +
       '<p>Toca un bloque: <b class="dot"></b> naranjo si hay jugadores esperando.</p>' +
       (days.length ? '<div class="days8">' + days.map((d) => {
         const t = parse(d.date);
-        return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? 'hoy' : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span>' + cell(d, 'am') + cell(d, 'pm') + '</div>';
+        return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? 'hoy' : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span><span class="pair">' + cell(d, 'am') + cell(d, 'pm') + '</span></div>';
       }).join('') + '</div>' : '<p class="small">Cargando…</p>') +
       '</section>';
   }
@@ -214,8 +219,8 @@
           '<li><button type="button" class="row open" data-a="pickOpen" data-id="' + esc(g.id) + '"><time>' + g.time + '</time><span class="txt"><span class="name">' + esc(g.sport.name) + ' · ' + esc(g.venue.name) + '</span>' +
           '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">Juegan ' + who(g.players) + '</span></span><span class="go">Unirme</span></button></li>').join('') + '</ul>';
     }
-    h += '<h2 class="label">Crear un partido ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + '</h2>' +
-      (S.sports.length ? '<div class="card create">' + sportPicker('createIn', 'Te mostramos las horas libres de ese día.', 'Ver horas libres') + '</div>'
+    h += '<h2 class="label">' + (b.half === 'am' ? 'Crear un partido ese día' : 'Crear un partido en la tarde') + '</h2>' +
+      (S.sports.length ? '<div class="card create">' + sportPicker('createIn', b.half === 'am' ? 'Te mostramos las horas libres de ese día, mañana y tarde.' : 'Te mostramos las horas libres de esa tarde.', 'Ver horas libres') + '</div>'
         : '<p class="muted">Todavía no hay deportes disponibles.</p>');
     return h;
   }
@@ -255,8 +260,12 @@
       '<div class="cal">' + cells + '</div><p class="legend"><i></i> Hay alguien buscando partido ese día</p>' +
       '<p class="small muted">Puedes agendar hasta el ' + fecha(S.today.last_bookable) + '.</p>';
     if (S.date) {
-      const half = S.preset && S.preset.date === S.date ? S.preset.half : null;
-      const slots = half ? S.slots.filter((s) => halfOf(s.time) === half) : S.slots;
+      // Al crear desde un bloque del inicio: desde AM se ofrece el día completo y
+      // desde PM solo la tarde. Si el día es hoy, solo horas que aún no comienzan.
+      const fromBlock = S.preset && S.preset.date === S.date;
+      const half = fromBlock && S.preset.half === 'pm' ? 'pm' : null;
+      const after = fromBlock && S.date === S.today.date ? nowHHMM() : null;
+      const slots = S.slots.filter((s) => (!half || halfOf(s.time) === half) && (!after || s.time > after));
       h += '<h2 id="dia">' + cap(fecha(S.date)) + (half ? ' · ' + HALF[half] : '') + '</h2>';
       if (half) h += '<p class="small"><button type="button" class="linkbtn" data-a="allDay">Ver todo el día</button></p>';
       h += slots.length ? '<ul class="slots">' + slots.map((s) => {
@@ -269,7 +278,7 @@
         if (s.free_courts) o.push('<button type="button" class="opt" data-a="pickTime" data-t="' + s.time + '"><span>' + (coord() ? 'Hora disponible' : plural(s.free_courts, 'cancha libre', 'canchas libres')) + '</span><b>Abrir partido</b></button>');
         if (!o.length) o.push('<div class="opt full">Completo</div>');
         return '<li class="slot"><time>' + s.time + '</time><div class="opts">' + o.join('') + '</div></li>';
-      }).join('') + '</ul>' : '<p class="muted">No quedan horas disponibles ' + (half ? 'en la ' + HALF[half] + ' de ese día.' : 'ese día.') + '</p>';
+      }).join('') + '</ul>' : '<p class="muted">No quedan horas disponibles ' + (half ? 'esa ' + HALF[half] + '.' : 'ese día.') + '</p>';
     } else h += '<p class="muted" style="margin-top:1rem">Toca un día para ver las horas disponibles.</p>';
     return h;
   }
@@ -676,7 +685,7 @@
   (async function boot() {
     const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
     if (!today) { $('#app').innerHTML = '<div class="card"><h2>No pudimos cargar las canchas</h2><p class="muted">Revisa tu conexión y vuelve a intentarlo.</p><div class="actions"><button class="btn" onclick="location.reload()">Reintentar</button></div></div>'; return; }
-    S.today = today; S.sports = sports || []; S.open = open || [];
+    S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
     if (!fromHash()) { S.view = 'home'; render(); }
     await loadMine(); render();
   })();

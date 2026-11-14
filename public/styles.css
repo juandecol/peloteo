@@ -283,3 +283,10 @@ h1.h{font-weight:900;text-transform:uppercase;letter-spacing:0;font-size:1.5rem;
 .card.create .btn{background:#14251D;color:#FFFFFF}
 .card.create :focus-visible{outline-color:#1E6B4F}
 .picker label.f{margin-top:.6rem}
+
+/* AM y PM de cada día se leen como una sola pieza: esquinas redondeadas solo
+   arriba de AM y abajo de PM, rectas al medio, separadas por 2 px. */
+.day8 .pair{display:flex;flex-direction:column;gap:2px}
+.blk.am{border-radius:8px 8px 0 0}
+.blk.pm{border-radius:0 0 8px 8px}
+.blk:focus-visible{position:relative;z-index:1}
