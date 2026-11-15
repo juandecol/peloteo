@@ -326,6 +326,41 @@ test("configuración: editar deporte reemplaza sus categorías", async () => {
   assert.equal(t.db.count("SELECT count(*) AS n FROM categories WHERE sport_id = 'D-TEN01'"), 2);
 });
 
+test("configuración: el orden del deporte define el selector; con el mismo número, alfabético", async () => {
+  const t = await ready();
+  const names = async () => (await listSportGroups(t.db)).map((g) => g.name);
+  // Sin orden (todos en 0): alfabético, como antes.
+  assert.deepEqual(await names(), ["Pádel", "Tenis"]);
+  const add = async (name: string, sort_order?: unknown) => {
+    const s = await t.req("POST", "/admin/api/sports", { venue_id: "L-SM001", name, match_sizes: [2], categories: ["Pro"], ...(sort_order !== undefined ? { sort_order } : {}) });
+    assert.equal(s.status, 201, JSON.stringify(s.json));
+    await t.req("POST", "/admin/api/courts", { ...COURT, sport_id: s.json.id });
+    return s.json;
+  };
+  const squash = await add("Squash", 2);
+  assert.equal(squash.sort_order, 2);
+  const basquet = await add("Básquetbol"); // sin el campo: 0
+  assert.equal(basquet.sort_order, 0);
+  // Tenis primero; luego los de 0 en orden alfabético; Squash al final.
+  const ten = await t.req("PUT", "/admin/api/sports/D-TEN01", { name: "Tenis", match_sizes: [2, 4], categories: ["Pro"], sort_order: "0" });
+  assert.equal(ten.json.sort_order, 0);
+  assert.deepEqual(await names(), ["Básquetbol", "Pádel", "Tenis", "Squash"]);
+  await t.req("PUT", "/admin/api/sports/D-TEN01", { name: "Tenis", match_sizes: [2, 4], categories: ["Pro"], sort_order: -0 });
+  await t.req("PUT", "/admin/api/sports/D-PAD01", { name: "Pádel", match_sizes: [2, 4], categories: ["Pro"], sort_order: 1 });
+  await t.req("PUT", "/admin/api/sports/" + basquet.id, { name: "Básquetbol", match_sizes: [2], categories: ["Pro"], sort_order: 1 });
+  assert.deepEqual(await names(), ["Tenis", "Básquetbol", "Pádel", "Squash"]);
+  // Editar sin el campo no cambia el orden.
+  const same = await t.req("PUT", "/admin/api/sports/" + squash.id, { name: "Squash", match_sizes: [2], categories: ["Pro"] });
+  assert.equal(same.json.sort_order, 2);
+  // Solo enteros de 0 a 999.
+  for (const bad of [-1, 1000, 1.5, "abc"]) {
+    const r = await t.req("PUT", "/admin/api/sports/" + squash.id, { name: "Squash", match_sizes: [2], categories: ["Pro"], sort_order: bad });
+    assert.equal(r.status, 400, String(bad));
+    assert.equal(r.json.field, "sort_order");
+  }
+  assert.equal((await t.req("GET", "/admin/api/sports/" + squash.id)).json.sort_order, 2);
+});
+
 test("configuración: un deporte se muestra a los jugadores solo si está visible y tiene canchas operativas", async () => {
   const t = await ready();
   const names = async () => (await listSportGroups(t.db)).map((g) => g.name);

@@ -32,6 +32,7 @@ interface SportRow {
   venue_id: string;
   name: string;
   match_sizes: string;
+  sort_order: number;
   courts: number;
 }
 
@@ -39,7 +40,7 @@ interface SportRow {
 async function activeSports(db: Db): Promise<SportRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT s.id, s.venue_id, s.name, s.match_sizes,
+      `SELECT s.id, s.venue_id, s.name, s.match_sizes, s.sort_order,
               (SELECT count(*) FROM courts c
                WHERE c.sport_id = s.id AND c.deleted_at IS NULL AND c.status = 'operativa') AS courts
        FROM sports s JOIN venues v ON v.id = s.venue_id
@@ -62,12 +63,17 @@ function displayName(names: string[]): string {
   return [...count.keys()].sort((a, b) => score(b) - score(a) || a.localeCompare(b, "es"))[0]!;
 }
 
-/** Deportes agrupados por nombre normalizado, con cuántos lugares y canchas los ofrecen. */
+/**
+ * Deportes agrupados por nombre normalizado, con cuántos lugares y canchas los ofrecen.
+ * Orden del selector: `sort_order` (el menor del grupo, si el deporte está en varios
+ * lugares) y, con el mismo número, alfabético.
+ */
 export async function listSportGroups(db: Db): Promise<SportGroup[]> {
-  const groups = new Map<string, SportGroup & { names: string[] }>();
+  const groups = new Map<string, SportGroup & { names: string[]; order: number }>();
   for (const s of await activeSports(db)) {
     const key = sportKey(s.name);
-    const g = groups.get(key) ?? { key, name: s.name, venues: 0, courts: 0, names: [] };
+    const g = groups.get(key) ?? { key, name: s.name, venues: 0, courts: 0, names: [], order: s.sort_order };
+    g.order = Math.min(g.order, s.sort_order);
     g.venues++;
     g.courts += s.courts;
     g.names.push(s.name.trim());
@@ -75,7 +81,8 @@ export async function listSportGroups(db: Db): Promise<SportGroup[]> {
   }
   return [...groups.values()]
     .map(({ names, ...g }) => ({ ...g, name: displayName(names) }))
-    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "es"))
+    .map(({ order: _order, ...g }) => g);
 }
 
 export interface PublicSport {

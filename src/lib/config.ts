@@ -213,19 +213,21 @@ export interface Sport {
   active_courts: number;
   /** Lo decide el administrador: si se ofrece a los jugadores. */
   visible: boolean;
+  /** Orden en el selector (0 a 999): menor primero; con el mismo número, alfabético. */
+  sort_order: number;
 }
 
 export async function listSports(db: Db, venueId: string): Promise<Sport[]> {
   const { results } = await db
     .prepare(
-      `SELECT s.id, s.venue_id, s.name, s.match_sizes, s.visible,
+      `SELECT s.id, s.venue_id, s.name, s.match_sizes, s.visible, s.sort_order,
               (SELECT count(*) FROM courts c WHERE c.sport_id = s.id AND c.deleted_at IS NULL) AS courts,
               (SELECT count(*) FROM courts c
                WHERE c.sport_id = s.id AND c.deleted_at IS NULL AND c.status = 'operativa') AS active_courts
-       FROM sports s WHERE s.venue_id = ? AND s.deleted_at IS NULL ORDER BY s.name, s.id`,
+       FROM sports s WHERE s.venue_id = ? AND s.deleted_at IS NULL ORDER BY s.sort_order, s.name COLLATE NOCASE, s.id`,
     )
     .bind(venueId)
-    .all<{ id: string; venue_id: string; name: string; match_sizes: string; visible: number; courts: number; active_courts: number }>();
+    .all<{ id: string; venue_id: string; name: string; match_sizes: string; visible: number; sort_order: number; courts: number; active_courts: number }>();
   if (results.length === 0) return [];
   const { results: cats } = await db
     .prepare(
@@ -280,7 +282,14 @@ function validateSport(input: Record<string, unknown>) {
   );
   // Sin el campo: visible al crear y sin cambios al editar.
   const visible = typeof input.visible === "boolean" ? (input.visible ? 1 : 0) : null;
-  return { name, match_sizes: sizes.join(","), categories, categoriesEn, visible };
+  // Orden en el selector: entero de 0 a 999. Sin el campo: 0 al crear y sin cambios al editar.
+  let sortOrder: number | null = null;
+  if (input.sort_order !== undefined && input.sort_order !== null && input.sort_order !== "") {
+    const n = Number(input.sort_order);
+    if (!Number.isInteger(n) || n < 0 || n > 999) throw invalid("El orden debe ser un número entero entre 0 y 999.", "sort_order");
+    sortOrder = n;
+  }
+  return { name, match_sizes: sizes.join(","), categories, categoriesEn, visible, sortOrder };
 }
 
 function categoryStatements(db: Db, sportId: string, categories: string[], categoriesEn: string[]): DbStatement[] {
@@ -300,8 +309,8 @@ export async function createSport(db: Db, venueId: string, input: Record<string,
   const s = validateSport(input);
   const id = newId("D");
   await db.batch([
-    db.prepare("INSERT INTO sports (id, venue_id, name, match_sizes, visible) VALUES (?, ?, ?, ?, ?)")
-      .bind(id, venueId, s.name, s.match_sizes, s.visible ?? 1),
+    db.prepare("INSERT INTO sports (id, venue_id, name, match_sizes, visible, sort_order) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(id, venueId, s.name, s.match_sizes, s.visible ?? 1, s.sortOrder ?? 0),
     ...categoryStatements(db, id, s.categories, s.categoriesEn),
   ]);
   return getSport(db, id);
@@ -311,8 +320,8 @@ export async function updateSport(db: Db, id: string, input: Record<string, unkn
   await getSport(db, id);
   const s = validateSport(input);
   await db.batch([
-    db.prepare("UPDATE sports SET name = ?, match_sizes = ?, visible = COALESCE(?, visible) WHERE id = ?")
-      .bind(s.name, s.match_sizes, s.visible, id),
+    db.prepare("UPDATE sports SET name = ?, match_sizes = ?, visible = COALESCE(?, visible), sort_order = COALESCE(?, sort_order) WHERE id = ?")
+      .bind(s.name, s.match_sizes, s.visible, s.sortOrder, id),
     db.prepare("DELETE FROM categories WHERE sport_id = ?").bind(id),
     ...categoryStatements(db, id, s.categories, s.categoriesEn),
   ]);

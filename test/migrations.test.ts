@@ -45,6 +45,13 @@ test("migración 0010: los deportes existentes quedan visibles y visible solo ad
   assert.throws(() => db.exec("UPDATE sports SET visible = 2 WHERE id = 'D-TEN01'"), /CHECK constraint failed/);
 });
 
+test("migración 0012: los deportes existentes quedan con orden 0 y el orden va de 0 a 999", () => {
+  const db = new TestDb();
+  assert.equal(db.count("SELECT count(*) AS n FROM sports WHERE sort_order <> 0"), 0);
+  assert.throws(() => db.exec("UPDATE sports SET sort_order = -1 WHERE id = 'D-TEN01'"), /CHECK constraint failed/);
+  assert.throws(() => db.exec("UPDATE sports SET sort_order = 1000 WHERE id = 'D-TEN01'"), /CHECK constraint failed/);
+});
+
 test("migración 0002: borrar un encuentro sigue borrando sus jugadores en cascada", () => {
   const db = new TestDb();
   db.exec("DELETE FROM games WHERE id = 'E-DEMO3'");

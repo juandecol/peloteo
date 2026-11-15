@@ -190,7 +190,7 @@
       '<div class="actions"><button type="button" class="btn ghost sm" data-a="go" data-v="venueForm">Editar lugar</button></div></div><h3>Deportes en este lugar</h3>';
     h += S.sports.length ? '<ul class="list">' + S.sports.map((s) => {
       const nc = s.categories.filter(Boolean).length;
-      return '<li><button type="button" class="row" data-a="go" data-v="sport" data-sport="' + esc(s.id) + '"><span><span class="name">' + esc(s.name) + ' ' + sportState(s).tag + '</span><span class="meta">ID ' + esc(s.id) + '. ' + plural(nc, 'categoría', 'categorías') + ', ' + plural(s.courts, 'cancha', 'canchas') + '</span></span><span class="go">Abrir</span></button></li>';
+      return '<li><button type="button" class="row" data-a="go" data-v="sport" data-sport="' + esc(s.id) + '"><span><span class="name">' + esc(s.name) + ' ' + sportState(s).tag + '</span><span class="meta">ID ' + esc(s.id) + '. Orden ' + s.sort_order + '. ' + plural(nc, 'categoría', 'categorías') + ', ' + plural(s.courts, 'cancha', 'canchas') + '</span></span><span class="go">Abrir</span></button></li>';
     }).join('') + '</ul>' : '<p class="muted">Aún no hay deportes en este lugar.</p>';
     return h + '<div class="actions"><button type="button" class="btn" data-a="go" data-v="sportForm" data-sport="">Agregar deporte</button></div>';
   }
@@ -213,6 +213,8 @@
       [2, 4].map((n) => '<label><input type="checkbox" name="match_sizes" value="' + n + '"' + (sizes.includes(n) ? ' checked' : '') + '>' + n + (n === 2 ? ' (singles)' : ' (dobles)') + '</label>').join('') + '</div></fieldset>' +
       '<div class="checks"><label><input type="checkbox" name="visible" value="1"' + (!sp || sp.visible ? ' checked' : '') + '>Visible para los jugadores</label></div>' +
       '<p class="small muted">Desmárcalo para preparar el deporte sin que aparezca en el sitio. Aunque esté marcado, solo aparece cuando tiene al menos una cancha operativa.</p>' +
+      '<label class="f" for="so">Orden en el selector</label><input id="so" name="sort_order" type="number" inputmode="numeric" min="0" max="999" step="1" style="max-width:8rem" value="' + (sp ? sp.sort_order : 0) + '" aria-describedby="so-h">' +
+      '<p id="so-h" class="small muted">Número entero de 0 a 999: el menor aparece primero en el selector de deportes del sitio. Si dos deportes tienen el mismo número, se ordenan alfabéticamente.</p>' +
       '<h3>Categorías <span class="muted small">(1 avanzado, 5 principiante; deja en blanco las que no uses)</span></h3>' +
       '<p class="small muted">Cada categoría puede tener su texto en inglés, que se muestra a quienes usan el sitio en ENG. Si lo dejas en blanco, se muestra el texto en español.</p>' +
       [1, 2, 3, 4, 5].map((n) => '<label class="f" for="c' + n + '">Categoría ' + n + '</label><input id="c' + n + '" name="c' + n + '" type="text" maxlength="60" placeholder="' + (n === 1 ? 'Estoy entrenando para Wimbledon' : n === 5 ? 'Apenas logro pasar la pelota' : 'Texto para el nivel ' + n) + '" value="' + esc(cats[n - 1] || '') + '">' +
@@ -504,7 +506,7 @@
       toast('Lugar guardado.'); S.venue = r.data; await go('venue', { venueId: r.data.id });
     },
     async sport(d) {
-      const body = { name: d.name, match_sizes: d.match_sizes || [], visible: (d.visible || []).length > 0, categories: [1, 2, 3, 4, 5].map((n) => d['c' + n] || ''), categories_en: [1, 2, 3, 4, 5].map((n) => d['ce' + n] || ''), venue_id: S.venueId };
+      const body = { name: d.name, match_sizes: d.match_sizes || [], visible: (d.visible || []).length > 0, sort_order: d.sort_order, categories: [1, 2, 3, 4, 5].map((n) => d['c' + n] || ''), categories_en: [1, 2, 3, 4, 5].map((n) => d['ce' + n] || ''), venue_id: S.venueId };
       const r = S.sportId ? await api('PUT', '/admin/api/sports/' + S.sportId, body) : await api('POST', '/admin/api/sports', body);
       if (!r.ok) { fail(r); return; }
       toast('Deporte guardado.'); await go('sport', { sportId: r.data.id });
