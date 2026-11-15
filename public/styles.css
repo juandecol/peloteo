@@ -400,3 +400,8 @@ html[lang="en"] .day8.today .dl{font-size:.58rem;letter-spacing:0}
 /* Partido propio en la lista de un bloque: visible, sin opción de unirse. */
 .row.open.mine{cursor:default;opacity:.75}
 .row.open.mine .go{font-weight:600;color:var(--muted,inherit)}
+
+/* Admin: eliminar todos los partidos (zona de peligro, al final de Encuentros). */
+.card.wipe{margin-top:1.5rem;border-color:var(--clay)}
+.card.wipe h3{color:var(--clay)}
+.card.wipe.on{border-width:2px}

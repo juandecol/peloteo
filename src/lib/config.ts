@@ -611,6 +611,41 @@ export async function listGames(db: Db, now: LocalNow, from?: unknown): Promise<
   }));
 }
 
+// ---------------------------------------------------------------
+// Eliminar todos los partidos (2026-11-15)
+// ---------------------------------------------------------------
+
+/** Palabra que el administrador escribe para confirmar (segunda confirmación). */
+export const DELETE_ALL_WORD = "ELIMINAR";
+
+export interface DeleteAllPlan {
+  /** Partidos que se borrarán: todos, de todos los lugares y deportes, pasados, futuros y cancelados. */
+  games: number;
+  players: number;
+  /** Avisos "encuentro cancelado" para los partidos de hoy en adelante que no estaban cancelados. */
+  notices: PendingNotice[];
+}
+
+/** Cuenta lo que se borrará y prepara los avisos (antes de borrar, mientras los datos existen). */
+export async function planDeleteAllGames(db: Db, now: LocalNow, confirm: unknown): Promise<DeleteAllPlan> {
+  if (typeof confirm !== "string" || confirm.trim().toUpperCase() !== DELETE_ALL_WORD) {
+    throw invalid(`Escribe ${DELETE_ALL_WORD} para confirmar.`, "confirm");
+  }
+  const counts = await db
+    .prepare("SELECT (SELECT count(*) FROM games) AS games, (SELECT count(*) FROM players) AS players")
+    .first<{ games: number; players: number }>();
+  const { results } = await db
+    .prepare("SELECT id FROM games WHERE status <> 'cancelado' AND date >= ? ORDER BY date, time, rowid")
+    .bind(now.date)
+    .all<{ id: string }>();
+  return { games: counts?.games ?? 0, players: counts?.players ?? 0, notices: await cancelNotices(db, results.map((r) => r.id)) };
+}
+
+/** Borra todos los partidos y sus cupos, en una sola operación. Lugares, deportes, canchas y bloqueos no cambian. */
+export async function deleteAllGames(db: Db): Promise<void> {
+  await db.batch([db.prepare("DELETE FROM players"), db.prepare("DELETE FROM games")]);
+}
+
 /** Cancela un encuentro: pasa a 'cancelado' (se conserva) y se avisa a sus jugadores. */
 export async function cancelGame(db: Db, id: string): Promise<PendingNotice[]> {
   const g = await db.prepare("SELECT status FROM games WHERE id = ?").bind(id).first<{ status: string }>();

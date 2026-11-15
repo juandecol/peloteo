@@ -103,6 +103,7 @@
 
   async function go(view, ids) {
     Object.assign(S, ids || {});
+    S.wipe = false; S.wipeErr = '';
     if (view === 'venues') { S.venueId = S.sportId = S.courtId = null; }
     if (view === 'venue') { S.sportId = S.courtId = null; }
     if (view === 'sport') { S.courtId = null; }
@@ -276,9 +277,23 @@
       '<div class="actions"><button class="btn" type="submit">Bloquear</button></div></form></div>';
   }
 
+  // Eliminar todos los partidos: doble confirmación. Primero el botón abre la
+  // advertencia; después hay que escribir ELIMINAR y confirmar.
+  function vWipe() {
+    if (!S.wipe) {
+      return '<div class="card wipe"><h3>Eliminar todos los partidos</h3><p class="small muted">Borra todos los partidos del sistema, de todos los lugares y deportes: pasados, futuros y cancelados, con sus jugadores. Lugares, deportes, canchas y bloqueos no cambian.</p>' +
+        '<div class="actions"><button type="button" class="btn danger" data-a="wipeAsk">Eliminar todos los partidos</button></div></div>';
+    }
+    return '<div class="card wipe on" role="alertdialog" aria-labelledby="wipe-t" aria-describedby="wipe-d"><h3 id="wipe-t">¿Eliminar todos los partidos?</h3>' +
+      '<p id="wipe-d">Se borrarán <b>todos</b> los partidos de todos los lugares y deportes, y sus jugadores. Los jugadores de partidos de hoy en adelante que no estaban cancelados recibirán el aviso de partido cancelado. <b>No se puede deshacer.</b></p>' +
+      '<form data-f="wipe" novalidate><label class="f" for="wipe-confirm">Para confirmar, escribe ELIMINAR</label><input id="wipe-confirm" name="confirm" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" required>' +
+      (S.wipeErr ? '<p class="err" role="alert">' + esc(S.wipeErr) + '</p>' : '') +
+      '<div class="actions"><button class="btn danger" type="submit"' + (S.busy ? ' disabled' : '') + '>Eliminar todo</button><button type="button" class="btn ghost" data-a="wipeCancel">Volver</button></div></form></div>';
+  }
+
   function vGames() {
     const gs = S.games;
-    if (!gs.length) return '<p class="muted">No hay encuentros agendados de hoy en adelante.</p>';
+    if (!gs.length) return '<p class="muted">No hay encuentros agendados de hoy en adelante.</p>' + vWipe();
     return gs.map((g) => {
       const faltan = g.capacity - g.players.length;
       const tag = g.status === 'abierto' ? '<span class="tag">' + (faltan === 1 ? 'Falta 1 jugador' : 'Faltan ' + faltan + ' jugadores') + '</span>'
@@ -290,7 +305,7 @@
         '<p class="small muted">' + g.capacity + ' jugadores · acepta ' + (g.accepted_levels.length === 1 ? 'nivel ' : 'niveles ') + g.accepted_levels.join(', ') + '</p>' +
         g.players.map((p) => '<p class="small">' + esc(p.initials) + ', nivel ' + p.level + ', <a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' + (p.whatsapp ? ', ' + esc(p.whatsapp) : '') + '</p>').join('') +
         (g.status !== 'cancelado' ? '<div class="actions"><button type="button" class="btn danger sm" data-a="cancelGame" data-id="' + esc(g.id) + '">' + (S.confirm === key ? 'Toca de nuevo para cancelar' : 'Cancelar encuentro') + '</button></div>' : '') + '</div>';
-    }).join('');
+    }).join('') + vWipe();
   }
 
   const tfaErrBox = () => (S.tfaErr ? '<p class="err" role="alert">' + esc(S.tfaErr) + '</p>' : '');
@@ -415,6 +430,18 @@
   }
 
   const submit = {
+    // Segunda confirmación: el servidor también exige la palabra.
+    async wipe(d) {
+      if ((d.confirm || '').trim().toUpperCase() !== 'ELIMINAR') { S.wipeErr = 'Escribe ELIMINAR para confirmar.'; render(); focusWipe(); return; }
+      S.busy = true; S.wipeErr = ''; render();
+      const r = await api('POST', '/admin/api/games/delete-all', { confirm: d.confirm });
+      S.busy = false;
+      if (!r.ok) { S.wipeErr = r.data.error || 'No se pudo eliminar.'; render(); focusWipe(); return; }
+      S.wipe = false;
+      toast(r.data.deleted_games === 0 ? 'No había partidos.' : 'Se eliminaron ' + plural(r.data.deleted_games, 'partido', 'partidos') +
+        (r.data.notified_games ? '. Se avisó a los jugadores de ' + plural(r.data.notified_games, 'partido próximo', 'partidos próximos') : '') + '.');
+      await load(); render();
+    },
     async settings(d) {
       const r = await api('PUT', '/admin/api/settings', { whatsapp_contact: (d.whatsapp_contact || []).length > 0 });
       if (!r.ok) { fail(r); return; }
@@ -560,6 +587,8 @@
     },
     async delConfirm() { if (S.affected) await doDelete(S.affected.key, true); },
     dismiss() { S.affected = null; S.err = ''; render(); },
+    wipeAsk() { S.wipe = true; S.wipeErr = ''; render(); focusWipe(); },
+    wipeCancel() { S.wipe = false; S.wipeErr = ''; render(); },
     async cancelGame(d) {
       const key = 'game:' + d.id;
       if (S.confirm !== key) { S.confirm = key; render(); return; }
@@ -570,6 +599,8 @@
       await load(); render();
     },
   };
+
+  function focusWipe() { const el = document.getElementById('wipe-confirm'); if (el) el.focus(); }
 
   // ---------------- arranque ----------------
   document.addEventListener('click', (e) => {

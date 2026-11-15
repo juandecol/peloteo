@@ -26,6 +26,8 @@ import {
 import {
   cancelGame,
   ConfigError,
+  deleteAllGames,
+  planDeleteAllGames,
   createBlock,
   createCourt,
   createSport,
@@ -386,6 +388,16 @@ export function adminRoutes(options: AppOptions = {}) {
   });
 
   api.get("/games", async (c) => c.json(await listGames(c.env.DB, today(c), c.req.query("from"))));
+  // Eliminar todos los partidos del sistema (doble confirmación en la interfaz; el
+  // servidor exige { confirm: "ELIMINAR" }). Avisa primero a los jugadores de los
+  // partidos de hoy en adelante que no estaban cancelados, y luego borra todo.
+  api.post("/games/delete-all", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const plan = await planDeleteAllGames(c.env.DB, today(c), (body as { confirm?: unknown }).confirm);
+    await sendNotices(c, plan.notices, today(c), options, true);
+    await deleteAllGames(c.env.DB);
+    return c.json({ deleted_games: plan.games, deleted_players: plan.players, notified_games: plan.notices.length });
+  });
   api.post("/games/:id/cancel", async (c) => {
     const notices = await cancelGame(c.env.DB, c.req.param("id"));
     await sendNotices(c, notices, today(c), options);

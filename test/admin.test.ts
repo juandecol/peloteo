@@ -7,14 +7,15 @@ import { hashPassword, verifyPassword } from "../src/lib/auth.ts";
 import { localNow } from "../src/lib/time.ts";
 import { listSportGroups } from "../src/lib/public.ts";
 import { emptyGamesDb, TestDb } from "./helpers/db.ts";
+import type { Channel, NoticeEvent } from "../src/lib/notify.ts";
 
 // Lunes 16 de noviembre de 2026, 10:00 en Santiago (UTC-3).
 const START = new Date("2026-11-16T13:00:00Z");
 const NEW_PASSWORD = "cancha-de-arcilla-2026";
 
-function setup(db: TestDb = emptyGamesDb()) {
+function setup(db: TestDb = emptyGamesDb(), channels?: Channel[]) {
   let now = START;
-  const app = createApp({ now: () => now });
+  const app = createApp({ now: () => now, ...(channels ? { channels } : {}) });
   const env = { DB: db };
   let cookie = "";
   async function req(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
@@ -494,6 +495,51 @@ test("encuentros: la lista del administrador incluye contactos y permite cancela
   const slot = (await getDayAvailability(t.db, "D-TEN01", "2026-11-17", t.now)).find((s) => s.time === "18:00")!;
   assert.equal(slot.free_courts, 2);
   assert.equal((await t.req("POST", "/admin/api/games/E-NOPE1/cancel", {})).status, 404);
+});
+
+test("encuentros: eliminar todos borra los partidos de todos los lugares y deportes, con doble confirmación", async () => {
+  const sent: { event: NoticeEvent; email: string; game: string }[] = [];
+  const capture: Channel = { name: "captura", async send(event, player, game) { sent.push({ event, email: player.email, game: game.id }); } };
+  const t = await ready(setup(emptyGamesDb(), [capture]));
+  const p = (initials: string) => ({ initials, level: 3, email: initials.toLowerCase() + "@example.com" });
+  // Uno confirmado y uno abierto (tenis), uno de pádel, uno cancelado y uno pasado.
+  const conf = await confirmedAt(t);
+  const open = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-18", time: "18:00", accepted_levels: [3], player: p("AB") }, "V-3", t.now);
+  await createGame(t.db, { sport_id: "D-PAD01", capacity: 4, date: "2026-11-18", time: "18:30", accepted_levels: [3], player: p("PD") }, "V-4", t.now);
+  const gone = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-19", time: "18:00", accepted_levels: [3], player: p("CC") }, "V-5", t.now);
+  t.db.exec(`UPDATE games SET status = 'cancelado' WHERE id = '${gone.game.id}'`);
+  t.db.exec(`INSERT INTO games (id, venue_id, sport_id, court_id, date, time, capacity, accepted_levels, status, created_at)
+             SELECT 'E-PAST1', venue_id, sport_id, NULL, '2026-11-10', time, capacity, accepted_levels, 'abierto', created_at FROM games WHERE id = '${open.game.id}'`);
+  const before = t.db.count("SELECT count(*) AS n FROM games");
+  assert.equal(before, 5);
+  const venues = t.db.count("SELECT count(*) AS n FROM venues");
+  const blocksAndCourts = t.db.count("SELECT (SELECT count(*) FROM courts) + (SELECT count(*) FROM sports) AS n");
+
+  // Sin la palabra (o con otra), no borra nada.
+  for (const body of [{}, { confirm: "" }, { confirm: "si" }]) {
+    const r = await t.req("POST", "/admin/api/games/delete-all", body);
+    assert.equal(r.status, 400);
+    assert.equal(r.json.field, "confirm");
+  }
+  assert.equal(t.db.count("SELECT count(*) AS n FROM games"), 5);
+
+  const r = await t.req("POST", "/admin/api/games/delete-all", { confirm: "eliminar" });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.deepEqual(r.json, { deleted_games: 5, deleted_players: 5, notified_games: 3 });
+  assert.equal(t.db.count("SELECT count(*) AS n FROM games"), 0);
+  assert.equal(t.db.count("SELECT count(*) AS n FROM players"), 0);
+  // Lugares, deportes y canchas no cambian.
+  assert.equal(t.db.count("SELECT count(*) AS n FROM venues"), venues);
+  assert.equal(t.db.count("SELECT (SELECT count(*) FROM courts) + (SELECT count(*) FROM sports) AS n"), blocksAndCourts);
+  // Se avisó (antes de borrar) a los jugadores de los partidos próximos no cancelados; no al cancelado ni al pasado.
+  assert.ok(sent.every((s) => s.event === "encuentro_cancelado"));
+  assert.deepEqual(new Set(sent.map((s) => s.game)), new Set([conf.game.id, open.game.id, sent.find((s) => s.email === "pd@example.com")!.game]));
+  assert.ok(!sent.some((s) => s.email === "cc@example.com"));
+});
+
+test("encuentros: eliminar todos exige sesión de administrador", async () => {
+  const t = setup();
+  assert.equal((await t.req("POST", "/admin/api/games/delete-all", { confirm: "ELIMINAR" })).status, 401);
 });
 
 // ---------------------------------------------------------------

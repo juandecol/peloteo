@@ -66,6 +66,8 @@ export async function sendNotices(
   notices: PendingNotice[],
   now: LocalNow,
   options: AppOptions = {},
+  /** true: espera a que salgan (por ejemplo, antes de borrar los partidos que los avisos leen). */
+  wait = false,
 ): Promise<void> {
   if (notices.every((n) => n.player_ids.length === 0)) return;
   const channels = options.channels ?? channelsFor(c.env, c.req.url);
@@ -79,6 +81,6 @@ export async function sendNotices(
   } catch {
     ctx = undefined; // pruebas: no hay ExecutionContext
   }
-  if (ctx) ctx.waitUntil(work);
+  if (ctx && !wait) ctx.waitUntil(work);
   else await work;
 }
