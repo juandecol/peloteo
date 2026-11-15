@@ -405,3 +405,14 @@ html[lang="en"] .day8.today .dl{font-size:.58rem;letter-spacing:0}
 .card.wipe{margin-top:1.5rem;border-color:var(--clay)}
 .card.wipe h3{color:var(--clay)}
 .card.wipe.on{border-width:2px}
+
+/* Pie de página: peloteo.cl, año y Políticas de Privacidad (letra pequeña). */
+footer.site{display:flex;flex-wrap:wrap;justify-content:center;gap:.35rem 1rem;padding:.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom,0px));font-size:.8rem;color:var(--muted)}
+footer.site a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+footer.site a:hover{color:var(--ink)}
+/* Página de Políticas de Privacidad. */
+.legal h2{margin:1.4rem 0 .4rem;font-size:1.05rem}
+.legal p,.legal li{line-height:1.5}
+.legal ul{padding-left:1.2rem;margin:.3rem 0 .6rem}
+.legal li{margin:.25rem 0}
+.legal code{font-size:.85em;background:var(--soft);padding:0 .25rem;border-radius:4px}

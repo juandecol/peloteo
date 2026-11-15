@@ -519,7 +519,63 @@
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* sin historial */ }
     if (m) { openToken(m[1]); return true; }
     if (h === '#mis-partidos') { go('mine'); return true; }
+    if (h === '#privacidad') { go('privacy'); return true; }
     return false;
+  }
+
+  // ---------------- Políticas de Privacidad (2026-11-15) ----------------
+  // Página del sitio (#privacidad), en español e inglés. Si cambia qué datos se
+  // guardan o con quién se comparten, actualizar este texto y su fecha.
+  const PRIVACY_CONTACT = 'contacto@peloteo.cl';
+  const PRIVACY_UPDATED = { es: '15 de noviembre de 2026', en: 'November 15, 2026' };
+  function vPrivacy() {
+    const mail = '<a href="mailto:' + PRIVACY_CONTACT + '">' + PRIVACY_CONTACT + '</a>';
+    const sec = (title, body) => '<h2>' + title + '</h2>' + body;
+    const ul = (items) => '<ul>' + items.map((i) => '<li>' + i + '</li>').join('') + '</ul>';
+    return '<article class="legal"><p class="crumbs"><button type="button" data-a="go" data-v="home">‹ ' + L('Inicio', 'Home') + '</button></p>' +
+      '<h1 class="h">' + L('Políticas de Privacidad', 'Privacy Policy') + '</h1>' +
+      '<p class="small muted">' + L('Última actualización: ' + PRIVACY_UPDATED.es, 'Last updated: ' + PRIVACY_UPDATED.en) + '</p>' +
+      '<p>' + L('Peloteo (peloteo.cl) ayuda a que jugadores se pongan de acuerdo para jugar. Para eso pedimos muy pocos datos y los usamos solo para organizar tus partidos. Aquí te contamos cuáles, para qué y qué puedes hacer con ellos.',
+        'Peloteo (peloteo.cl) helps players agree on a time to play. To do that we ask for very little data and use it only to organize your matches. Here is what we collect, why, and what you can do about it.') + '</p>' +
+      sec(L('Qué datos pedimos', 'What we collect'), ul([
+        L('<b>Iniciales y nivel de juego</b>, para mostrar quién juega en cada partido.', '<b>Initials and playing level</b>, to show who plays in each match.'),
+        L('<b>Email</b>, para enviarte los avisos de tus partidos.', '<b>Email</b>, to send you notices about your matches.'),
+        L('<b>WhatsApp</b> (opcional, solo si el sitio lo pide), para que tus compañeros puedan escribirte.', '<b>WhatsApp</b> (optional, only if the site asks for it), so your partners can message you.'),
+        L('Los partidos en que te anotas: deporte, lugar, día, hora y niveles que buscas.', 'The matches you sign up for: sport, venue, day, time and the levels you are looking for.'),
+      ]) + '<p>' + L('No pedimos tu nombre, contraseña, dirección ni datos de pago.', "We don't ask for your name, a password, your address or payment details.") + '</p>') +
+      sec(L('Quién ve tus datos', 'Who sees your data'), ul([
+        L('<b>Cualquier visitante</b> ve solo tus iniciales y tu nivel en los partidos abiertos.', '<b>Any visitor</b> only sees your initials and level in open matches.'),
+        L('<b>Tus compañeros</b> ven tu email (y tu WhatsApp, si lo diste) solo cuando el partido se confirma, para que se pongan de acuerdo.', '<b>Your partners</b> see your email (and WhatsApp, if you gave it) only once the match is confirmed, so you can get in touch.'),
+        L('<b>La administración del sitio</b> puede ver los datos de los partidos para gestionarlos.', '<b>The site administrators</b> can see match data in order to manage matches.'),
+      ]) + '<p>' + L('No vendemos ni compartimos tus datos con fines publicitarios.', "We don't sell your data or share it for advertising.") + '</p>') +
+      sec(L('Servicios que usamos', 'Services we use'), ul([
+        L('<b>Cloudflare</b>: aloja el sitio y la base de datos.', '<b>Cloudflare</b>: hosts the site and the database.'),
+        L('<b>Resend</b>: envía los correos de aviso.', '<b>Resend</b>: sends the notice emails.'),
+        L('<b>Google Fonts</b>: entrega la tipografía del sitio; tu navegador se conecta a Google para descargarla.', '<b>Google Fonts</b>: serves the site\'s typeface; your browser connects to Google to download it.'),
+      ]) + '<p>' + L('Estos servicios pueden procesar datos fuera de Chile, con sus propias medidas de seguridad.', 'These services may process data outside Chile, under their own security measures.') + '</p>') +
+      sec(L('Cookies y almacenamiento en tu navegador', 'Cookies and storage in your browser'),
+        '<p>' + L('Usamos solo lo necesario para que el sitio funcione. No usamos cookies de publicidad ni de analítica.', 'We only use what the site needs to work. We use no advertising or analytics cookies.') + '</p>' + ul([
+          L('<code>visitor_id</code>: un código al azar que reconoce tu navegador para mostrarte "Mis partidos". No dice quién eres.', '<code>visitor_id</code>: a random code that recognizes your browser to show "My matches". It does not identify you.'),
+          L('<code>peloteo_lang</code>: el idioma que elegiste.', '<code>peloteo_lang</code>: the language you chose.'),
+          L('<code>peloteo_intro</code>: recuerda si pediste no volver a ver la guía de bienvenida.', '<code>peloteo_intro</code>: remembers if you asked not to see the welcome guide again.'),
+          L('En el almacenamiento local de tu navegador guardamos tus iniciales, email, WhatsApp, nivel y último deporte, solo para no tener que escribirlos cada vez. Puedes borrarlos desde la configuración de tu navegador.', 'Your browser\'s local storage keeps your initials, email, WhatsApp, level and last sport, only so you don\'t have to type them every time. You can clear them from your browser settings.'),
+        ])) +
+      sec(L('Cuánto tiempo los guardamos', 'How long we keep it'),
+        '<p>' + L('Tus datos de un partido se guardan mientras el partido exista. Si cancelas tu cupo, tus datos de ese partido se eliminan. Los partidos pasados se conservan como registro y la administración puede eliminarlos; también puedes pedir que borremos los tuyos.',
+          'Your data for a match is kept while the match exists. If you cancel your spot, your data for that match is deleted. Past matches are kept as a record and the administrators can delete them; you can also ask us to delete yours.') + '</p>') +
+      sec(L('Tus derechos', 'Your rights'),
+        '<p>' + L('Puedes pedir ver, corregir o eliminar tus datos, u oponerte a su uso, escribiendo a ' + mail + '. Indica el email con que te anotaste. Te responderemos lo antes posible.',
+          'You can ask to see, correct or delete your data, or object to its use, by writing to ' + mail + '. Include the email you signed up with. We will reply as soon as we can.') + '</p>' +
+        '<p>' + L('Tratamos tus datos de acuerdo con la legislación chilena de protección de datos personales.', 'We handle your data in accordance with Chilean personal data protection law.') + '</p>') +
+      sec(L('Cambios a esta política', 'Changes to this policy'),
+        '<p>' + L('Si cambiamos esta política, publicaremos la nueva versión en esta página con su fecha de actualización.', 'If we change this policy, we will post the new version on this page with its update date.') + '</p>') +
+      '<p>' + L('¿Dudas? Escríbenos a ', 'Questions? Write to us at ') + mail + '.</p></article>';
+  }
+
+  // Pie de página: peloteo.cl, año en curso y enlace a las Políticas de Privacidad.
+  function footer() {
+    const year = S.today ? S.today.date.slice(0, 4) : String(new Date().getFullYear());
+    return '<span>peloteo.cl ' + year + '</span><a href="#privacidad" data-a="go" data-v="privacy">' + L('Políticas de Privacidad', 'Privacy Policy') + '</a>';
   }
 
   function view() {
@@ -533,6 +589,7 @@
       case 'mine': return vMine();
       case 'block': return vBlock();
       case 'token': return vToken();
+      case 'privacy': return vPrivacy();
       default: return vHome();
     }
   }
@@ -569,6 +626,7 @@
       '<span class="langs" role="group" aria-label="Idioma / Language">' + langBtn('es', 'ESP', 'Español') + langBtn('en', 'ENG', 'English') + '</span>' +
       '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">' + icon('mis', 18) + '<span class="lbl">' + both('Mis partidos', 'My matches') + '</span>' + (n ? '<b aria-label="' + n + L(' activos', ' active') + '">' + n + '</b>' : '') + '</button>' +
       '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">' + both('Configuración', 'Settings') + '</span></a></nav>';
+    const foot = $('#foot'); if (foot) foot.innerHTML = footer();
   }
 
   // ---------------- formularios ----------------
