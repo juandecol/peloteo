@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Peloteo",
+  "short_name": "Peloteo",
+  "description": "Ponte de acuerdo con otros jugadores en deporte, lugar, día y hora.",
+  "lang": "es-CL",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1611",
+  "theme_color": "#1E6B4F",
+  "categories": ["sports"],
+  "icons": [
+    { "src": "/img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/img/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

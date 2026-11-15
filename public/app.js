@@ -852,10 +852,26 @@
     }
   });
 
+  // App instalable: el service worker (public/sw.js) guarda el sitio para abrirlo sin conexión.
+  // PWA = false la retira: desregistra el service worker de este navegador y borra
+  // sus copias (ver RETIRED en sw.js y "App instalable" en CLAUDE.md).
+  const PWA = true;
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      if (PWA) { navigator.serviceWorker.register('/sw.js').catch(() => { /* sin service worker: el sitio funciona igual */ }); return; }
+      navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
+      if (window.caches) caches.keys().then((ks) => ks.filter((k) => k.startsWith('peloteo-')).forEach((k) => caches.delete(k))).catch(() => {});
+    });
+  }
+
   (async function boot() {
     saveLang(false); // lang y título de la página; la cookie solo se escribe al elegir idioma
     const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
-    if (!today) { $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
+    if (!today) {
+      // Sin conexión (o el servidor no responde): la app abre igual desde su copia
+      // guardada y lo explica, con el logotipo en la barra.
+      $('#bar').innerHTML = '<span class="brand"><img src="/img/logo.png" alt="Peloteo" width="648" height="120"></span>';
+      $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
     S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
     if (!fromHash()) { S.view = 'home'; render(); maybeIntro(); }
     await loadMine(); render();
