@@ -221,7 +221,7 @@
   function sportSelect() {
     const cur = homeSport();
     // La etiqueta lleva ambos idiomas superpuestos (el inactivo invisible): mide lo mismo en ESP y ENG.
-    return '<label class="f" for="sp-home"><span class="both start"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>Deporte</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>Sport</span></span></label><select id="sp-home" data-home="sport">' + S.sports.map((n) =>
+    return '<label class="f" for="sp-home"><span class="both start"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>Deporte:</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>Sport:</span></span></label><select id="sp-home" data-home="sport">' + S.sports.map((n) =>
       '<option value="' + esc(n.key) + '"' + (n.key === cur ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + (coord() ? '' : ' · ' + plural(n.venues, L('lugar', 'place'), L('lugares', 'places')) + ', ' + plural(n.courts, L('cancha', 'court'), L('canchas', 'courts'))) + '</option>').join('') + '</select>';
   }
 
@@ -256,10 +256,11 @@
       h += '<p class="muted">' + L('Nadie busca jugadores ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + ' de ese día. Abre tú un partido y otros podrán sumarse.',
         'Nobody is looking for players that ' + (b.half === 'am' ? 'morning' : 'afternoon') + '. Open a match yourself and others can join.') + '</p>';
     } else {
-      h += '<p class="muted">' + (S.blockGames.length === 1 ? L('1 partido busca jugadores.', '1 match is looking for players.') : S.blockGames.length + L(' partidos buscan jugadores.', ' matches are looking for players.')) + L(' Toca uno para sumarte.', ' Tap one to join.') + '</p>' +
+      h += '<p class="muted">' + (S.blockGames.length === 1 ? L('1 partido busca jugadores.', '1 match is looking for players.') : S.blockGames.length + L(' partidos buscan jugadores.', ' matches are looking for players.')) + (S.blockGames.some((g) => !g.mine) ? L(' Toca uno para sumarte.', ' Tap one to join.') : '') + '</p>' +
         '<ul class="list open-list">' + S.blockGames.map((g) =>
-          '<li><button type="button" class="row open" data-a="pickOpen" data-id="' + esc(g.id) + '"><time>' + g.time + '</time><span class="txt"><span class="name">' + esc(sportLabel(g.sport.name)) + ' · ' + esc(g.venue.name) + '</span>' +
-          '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">' + L('Juegan ', 'Playing: ') + who(g.players) + '</span></span><span class="go">' + L('Unirme', 'Join') + '</span></button></li>').join('') + '</ul>';
+          // Los partidos propios se ven, pero sin opción de unirse.
+          '<li><button type="button" class="row open' + (g.mine ? ' mine' : '') + '"' + (g.mine ? ' disabled' : ' data-a="pickOpen" data-id="' + esc(g.id) + '"') + '><time>' + g.time + '</time><span class="txt"><span class="name">' + esc(sportLabel(g.sport.name)) + ' · ' + esc(g.venue.name) + '</span>' +
+          '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">' + L('Juegan ', 'Playing: ') + who(g.players) + '</span></span><span class="go">' + (g.mine ? L('Ya estás', "You're in") : L('Unirme', 'Join')) + '</span></button></li>').join('') + '</ul>';
     }
     h += '<h2 class="label">' + (b.half === 'am' ? L('Crear un partido ese día', 'Create a match that day') : L('Crear un partido en la tarde', 'Create a match that afternoon')) + '</h2>' +
       (S.sports.length ? '<div class="card create"><p class="small muted">' + (b.half === 'am' ? L('Te mostramos las horas libres de ese día, mañana y tarde.', "We'll show you that day's free times, morning and afternoon.") : L('Te mostramos las horas libres de esa tarde.', "We'll show you that afternoon's free times.")) + '</p>' +

@@ -141,8 +141,9 @@ test("cuenta: al entrar, los partidos del navegador y del correo pasan a la cuen
   const mine = (await laptop.req("GET", "/api/me/games")).json;
   assert.deepEqual(mine.map((x: any) => x.id), [g.id]);
   assert.equal(mine[0].players[0].me, true);
-  // No aparece como disponible para sí mismo, y no puede ocupar otro cupo.
-  assert.deepEqual((await laptop.req("GET", "/api/open")).json[1], { date: DAY, am: 0, pm: 0 });
+  // En el inicio se ve como propio (también desde otro dispositivo), y no puede ocupar otro cupo.
+  const block = (await laptop.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json;
+  assert.deepEqual(block.map((x: any) => [x.id, x.mine]), [[g.id, true]]);
   const again = await laptop.req("POST", `/api/games/${g.id}/join`, { player: player("MT") });
   assert.equal(again.status, 409);
   assert.equal(again.json.code, "ya_inscrito");

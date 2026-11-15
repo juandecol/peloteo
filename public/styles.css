@@ -396,3 +396,7 @@ html[lang="en"] .day8.today .dl{font-size:.58rem;letter-spacing:0}
 .week .picker select{flex:1;min-width:0;margin:0}
 .week select{background:#FFFFFF;color:#14251D;border-color:rgba(20,37,29,.35);color-scheme:light}
 .week select:focus-visible{outline:3px solid var(--ball-ink);outline-offset:1px}
+
+/* Partido propio en la lista de un bloque: visible, sin opción de unirse. */
+.row.open.mine{cursor:default;opacity:.75}
+.row.open.mine .go{font-weight:600;color:var(--muted,inherit)}

@@ -337,6 +337,8 @@ export interface OpenGame {
   sport: { id: string; name: string; key: string };
   venue: { id: string; name: string };
   players: { initials: string; level: number }[];
+  /** Tiene un cupo de este visitante (o cuenta): se muestra, pero no puede sumarse. */
+  mine: boolean;
 }
 
 interface OpenRow {
@@ -350,11 +352,13 @@ interface OpenRow {
   venue_id: string;
   venue_name: string;
   n: number;
+  mine: number;
 }
 
 /**
  * Encuentros abiertos con cupo, en turno vigente, de deportes y lugares vigentes,
- * entre dos fechas. Excluye los del propio visitante (no puede sumarse a ellos).
+ * entre dos fechas. Incluye los del propio visitante, marcados con `mine` (2026-11-15:
+ * se ven en naranjo, pero no puede sumarse a ellos).
  * No filtra por nivel: el inicio aún no conoce el nivel del jugador.
  * Con `sport` (nombre normalizado, como "tenis") solo los de ese deporte, en todos sus lugares.
  */
@@ -363,15 +367,15 @@ async function openRows(db: Db, from: string, to: string, visitorId: string | Wh
     .prepare(
       `SELECT g.id, g.date, g.time, g.capacity, g.accepted_levels,
               s.id AS sport_id, s.name AS sport_name, v.id AS venue_id, v.name AS venue_name,
-              (SELECT count(*) FROM players p WHERE p.game_id = g.id) AS n
+              (SELECT count(*) FROM players p WHERE p.game_id = g.id) AS n,
+              EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND ${ownsSql("p")}) AS mine
        FROM games g
        JOIN sports s ON s.id = g.sport_id AND s.deleted_at IS NULL
        JOIN venues v ON v.id = g.venue_id AND v.deleted_at IS NULL
        WHERE g.status = 'abierto' AND g.date BETWEEN ? AND ?
-         AND NOT EXISTS (SELECT 1 FROM players p WHERE p.game_id = g.id AND ${ownsSql("p")})
        ORDER BY g.date, g.time, g.rowid`,
     )
-    .bind(from, to, ...ownsParams(asWho(visitorId)))
+    .bind(...ownsParams(asWho(visitorId)), from, to)
     .all<OpenRow>();
   const key = typeof sport === "string" && sport.trim() ? sportKey(sport) : null;
   return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now) && (!key || sportKey(g.sport_name) === key));
@@ -414,5 +418,6 @@ export async function listOpenBlock(
     sport: { id: g.sport_id, name: g.sport_name, key: sportKey(g.sport_name) },
     venue: { id: g.venue_id, name: g.venue_name },
     players: players.filter((p) => p.game_id === g.id).map(({ initials, level }) => ({ initials, level })),
+    mine: !!g.mine,
   }));
 }

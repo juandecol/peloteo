@@ -325,7 +325,7 @@ test("Mis partidos: no se puede cancelar el cupo de otro", async () => {
 // Inicio: partidos que buscan jugadores en los próximos 8 días (AM/PM)
 // ---------------------------------------------------------------
 
-test("inicio: resumen de 8 días con AM y PM; no cuenta los propios ni los completos", async () => {
+test("inicio: resumen de 8 días con AM y PM; cuenta los propios, no los completos", async () => {
   const w = world();
   const a = w.browser();
   const b = w.browser();
@@ -338,8 +338,8 @@ test("inicio: resumen de 8 días con AM y PM; no cuenta los propios ni los compl
   assert.equal(seen[7].date, "2026-11-23");
   assert.deepEqual(seen[1], { date: DAY, am: 1, pm: 1 });
   assert.ok(seen.filter((d: any) => d.date !== DAY).every((d: any) => d.am === 0 && d.pm === 0));
-  // Quien abrió no ve sus propios partidos como disponibles.
-  assert.deepEqual((await a.req("GET", "/api/open")).json[1], { date: DAY, am: 0, pm: 0 });
+  // Quien abrió también ve sus propios partidos en naranjo (2026-11-15).
+  assert.deepEqual((await a.req("GET", "/api/open")).json[1], { date: DAY, am: 1, pm: 1 });
 
   // Al completarse, el partido de tenis deja de buscar jugadores.
   await b.req("POST", `/api/games/${tenis.id}/join`, { player: player("RS") });
@@ -414,4 +414,22 @@ test("inicio: con ?sport= el resumen y la lista de un bloque muestran solo ese d
   const pm = (await b.req("GET", `/api/open/block?date=${DAY}&half=pm&sport=padel`)).json;
   assert.deepEqual(pm.map((g: any) => g.sport.key), ["padel"]);
   assert.equal((await b.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json.length, 2);
+});
+
+test("inicio: los partidos propios aparecen en la lista del bloque marcados como propios", async () => {
+  const w = world();
+  const a = w.browser();
+  const g = (await a.req("POST", "/api/games", openTenis("MT"))).json.game;
+  const own = (await a.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json;
+  assert.deepEqual(own.map((x: any) => [x.id, x.mine]), [[g.id, true]]);
+  // Para otro visitante el mismo partido no es propio y puede sumarse.
+  const b = w.browser();
+  assert.deepEqual((await b.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json.map((x: any) => x.mine), [false]);
+  // Quien se sumó a un partido de 4 también lo ve como propio.
+  const d = (await a.req("POST", "/api/games", { ...openTenis("MT"), time: "19:00", capacity: 4 })).json.game;
+  await b.req("POST", `/api/games/${d.id}/join`, { player: player("RS") });
+  const seen = (await b.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json;
+  assert.deepEqual(seen.map((x: any) => [x.time, x.mine]), [["18:00", false], ["19:00", true]]);
+  // Sigue sin poder ocupar otro cupo en su propio partido.
+  assert.equal((await a.req("POST", `/api/games/${g.id}/join`, { player: player("MT") })).json.code, "ya_inscrito");
 });
