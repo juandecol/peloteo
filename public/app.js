@@ -124,8 +124,8 @@
     S.view = view; S.err = ''; S.field = ''; S.confirm = null;
     if (!opts || !opts.keepScroll) window.scrollTo(0, 0);
     render();
-    if (view === 'home') { S.preset = null; [S.sports] = await Promise.all([get('/api/sports').then((r) => r || []), loadOpen()]); }
-    if (view === 'block') { S.blockGames = null; render(); S.blockGames = (await get('/api/open/block?date=' + S.block.date + '&half=' + S.block.half)) || []; }
+    if (view === 'home') { S.preset = null; S.sports = (await get('/api/sports')) || []; await loadOpen(); }
+    if (view === 'block') { S.blockGames = null; render(); S.blockGames = (await get('/api/open/block?date=' + S.block.date + '&half=' + S.block.half + sportQ())) || []; }
     if (view === 'mine') { await loadMine(); }
     if (view === 'search') { await prepareSearch(); }
     render();
@@ -208,23 +208,21 @@
     if (!S.sports.length) {
       return h + '<div class="card"><h2>' + L('Todavía no hay deportes disponibles', 'No sports available yet') + '</h2><p class="muted">' + L('Pronto aparecerán aquí las canchas para agendar.', 'Courts to book will show up here soon.') + '</p></div>';
     }
-    h += vWeek();
-    h += '<section class="card create" aria-labelledby="crea"><h2 id="crea">' + L('Crea un partido', 'Create a match') + '</h2>' +
-      sportPicker('create', L('Elige el deporte; después, el lugar, el día y la hora.', 'Pick the sport; then the place, day and time.'), L('Ver días y horas', 'See days and times')) + '</section>';
-    return h;
+    return h + vWeek();
   }
 
-  // Elegir deporte: siempre un menú desplegable (hoy solo tenis; listo para sumar otros).
-  // `form` identifica el formulario (data-f) que recibe { sport }.
-  function sportPicker(form, hint, button) {
-    // Por defecto: el último elegido en este navegador; si no, tenis (el deporte principal); si no, el primero.
+  // Deporte del inicio: siempre un menú desplegable (hoy solo tenis; listo para sumar otros).
+  // Por defecto: el último elegido en este navegador; si no, tenis (el deporte principal); si no, el primero.
+  function homeSport() {
     const has = (k) => S.sports.some((n) => n.key === k);
-    const last = prefs.sport && has(prefs.sport) ? prefs.sport : has('tenis') ? 'tenis' : (S.sports[0] && S.sports[0].key);
-    return '<form data-f="' + form + '" class="picker" novalidate><label class="f" for="sp-' + form + '">' + L('Deporte', 'Sport') + '</label>' +
-      '<select id="sp-' + form + '" name="sport">' + S.sports.map((n) =>
-        '<option value="' + esc(n.key) + '"' + (n.key === last ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + (coord() ? '' : ' · ' + plural(n.venues, L('lugar', 'place'), L('lugares', 'places')) + ', ' + plural(n.courts, L('cancha', 'court'), L('canchas', 'courts'))) + '</option>').join('') + '</select>' +
-      (hint ? '<p class="small muted">' + hint + '</p>' : '') +
-      '<div class="actions"><button class="btn block" type="submit">' + button + '</button></div></form>';
+    return prefs.sport && has(prefs.sport) ? prefs.sport : has('tenis') ? 'tenis' : (S.sports[0] && S.sports[0].key) || '';
+  }
+  const homeSportName = () => { const n = S.sports.find((x) => x.key === homeSport()); return n ? sportLabel(n.name) : ''; };
+  function sportSelect() {
+    const cur = homeSport();
+    // La etiqueta lleva ambos idiomas superpuestos (el inactivo invisible): mide lo mismo en ESP y ENG.
+    return '<label class="f" for="sp-home"><span class="both start"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>Deporte</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>Sport</span></span></label><select id="sp-home" data-home="sport">' + S.sports.map((n) =>
+      '<option value="' + esc(n.key) + '"' + (n.key === cur ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + (coord() ? '' : ' · ' + plural(n.venues, L('lugar', 'place'), L('lugares', 'places')) + ', ' + plural(n.courts, L('cancha', 'court'), L('canchas', 'courts'))) + '</option>').join('') + '</select>';
   }
 
   // Calendario horizontal de 8 días (hoy incluido): un bloque AM y uno PM por día.
@@ -237,7 +235,9 @@
       return '<button type="button" class="blk ' + half + (n ? ' on' : '') + '" data-a="block" data-d="' + d.date + '" data-h="' + half + '" aria-label="' + label + '">' + half.toUpperCase() + '</button>';
     };
     return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">' + L('¿Buscas con quién jugar?', 'Looking for someone to play with?') + '</h2>' +
-      '<p>' + L('Toca un bloque: <b class="dot"></b> naranjo si hay jugadores esperando.', 'Tap a block: <b class="dot"></b> orange if players are waiting.') + '</p>' +
+      '<div class="picker">' + sportSelect() + '</div>' +
+      '<p>' + L('Toca un bloque: si está <b class="dot"></b> naranjo, hay partidos esperando jugadores. En cualquier bloque también puedes crear tu propio partido.',
+        "Tap a block: if it's <b class=\"dot\"></b> orange, there are matches waiting for players. From any block you can also create your own match.") + '</p>' +
       (days.length ? '<div class="days8">' + days.map((d) => {
         const t = parse(d.date);
         return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? L('hoy', 'today') : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span><span class="pair">' + cell(d, 'am') + cell(d, 'pm') + '</span></div>';
@@ -250,7 +250,7 @@
     const b = S.block;
     if (!b) return '';
     let h = '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ ' + L('Inicio', 'Home') + '</button></p>' +
-      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF(b.half) + '</h1>';
+      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF(b.half) + '</h1>' + (homeSportName() ? '<p class="muted">' + esc(homeSportName()) + '</p>' : '');
     if (!S.blockGames) return h + '<p class="muted">' + L('Cargando…', 'Loading…') + '</p>';
     if (!S.blockGames.length) {
       h += '<p class="muted">' + L('Nadie busca jugadores ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + ' de ese día. Abre tú un partido y otros podrán sumarse.',
@@ -262,12 +262,15 @@
           '<span class="meta">' + cap(levelsText(g.accepted_levels)) + ' · ' + faltan(g.missing) + '</span><span class="meta">' + L('Juegan ', 'Playing: ') + who(g.players) + '</span></span><span class="go">' + L('Unirme', 'Join') + '</span></button></li>').join('') + '</ul>';
     }
     h += '<h2 class="label">' + (b.half === 'am' ? L('Crear un partido ese día', 'Create a match that day') : L('Crear un partido en la tarde', 'Create a match that afternoon')) + '</h2>' +
-      (S.sports.length ? '<div class="card create">' + sportPicker('createIn', b.half === 'am' ? L('Te mostramos las horas libres de ese día, mañana y tarde.', "We'll show you that day's free times, morning and afternoon.") : L('Te mostramos las horas libres de esa tarde.', "We'll show you that afternoon's free times."), L('Ver horas libres', 'See free times')) + '</div>'
+      (S.sports.length ? '<div class="card create"><p class="small muted">' + (b.half === 'am' ? L('Te mostramos las horas libres de ese día, mañana y tarde.', "We'll show you that day's free times, morning and afternoon.") : L('Te mostramos las horas libres de esa tarde.', "We'll show you that afternoon's free times.")) + '</p>' +
+        '<div class="actions"><button class="btn block" type="button" data-a="createIn">' + L('Crear un partido de ' + esc(homeSportName()), 'Create a ' + esc(homeSportName()) + ' match') + '</button></div></div>'
         : '<p class="muted">' + L('Todavía no hay deportes disponibles.', 'No sports available yet.') + '</p>');
     return h;
   }
 
-  async function loadOpen() { S.open = (await get('/api/open')) || []; }
+  // Resumen del inicio y lista de un bloque: solo del deporte elegido en el inicio.
+  const sportQ = () => (homeSport() ? '&sport=' + encodeURIComponent(homeSport()) : '');
+  async function loadOpen() { S.open = (await get('/api/open?' + sportQ().slice(1))) || []; }
 
   function vVenue() {
     if (!S.offers.length) return '<p>' + L('Ese deporte ya no está disponible.', 'That sport is no longer available.') + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Volver al inicio', 'Back to home') + '</button></div>';
@@ -623,8 +626,6 @@
   function rememberSport(key) { prefs = Object.assign({}, prefs, { sport: key }); LS.set('peloteo_prefs', prefs); }
   const submit = {
     play: submitPlay,
-    create(d) { if (!d.sport) return; rememberSport(d.sport); S.preset = null; chooseSport(d.sport); },
-    createIn(d) { if (!d.sport) return; rememberSport(d.sport); S.preset = { date: S.block.date, half: S.block.half }; S.fromBlock = false; chooseSport(d.sport); },
     async search(d) {
       const q = S.search;
       Object.assign(q, { from: d.from, to: d.to, t1: d.t1, t2: d.t2, level: Number(d.level) || null });
@@ -644,6 +645,8 @@
     go(d) { S.fromSearch = false; S.fromBlock = false; go(d.v); },
     block(d) { S.block = { date: d.d, half: d.h }; S.fromBlock = false; go('block'); },
     allDay() { S.preset = null; render(); },
+    // Crear un partido desde un bloque del inicio, con el deporte elegido arriba.
+    createIn() { const k = homeSport(); if (!k || !S.block) return; S.preset = { date: S.block.date, half: S.block.half }; S.fromBlock = false; chooseSport(k); },
     intro() { openIntro(); },
     lang(d) {
       if (d.l === lang) return;
@@ -838,6 +841,11 @@
   });
   document.addEventListener('change', async (e) => {
     const el = e.target;
+    if (el.dataset && el.dataset.home === 'sport') {
+      rememberSport(el.value); S.open = null; render(); await loadOpen(); render();
+      const sel = document.getElementById('sp-home'); if (sel) sel.focus();
+      return;
+    }
     if (el.dataset && el.dataset.s && S.search) {
       S.search[el.dataset.s] = el.value;
       if (el.dataset.s === 'sportKey') { S.search.sportId = ''; S.search.level = null; }
@@ -866,13 +874,13 @@
 
   (async function boot() {
     saveLang(false); // lang y título de la página; la cookie solo se escribe al elegir idioma
-    const [today, sports, open] = await Promise.all([get('/api/today'), get('/api/sports'), get('/api/open')]);
+    const [today, sports] = await Promise.all([get('/api/today'), get('/api/sports')]);
     if (!today) {
       // Sin conexión (o el servidor no responde): la app abre igual desde su copia
       // guardada y lo explica, con el logotipo en la barra.
       $('#bar').innerHTML = '<span class="brand"><img src="/img/logo.png" alt="Peloteo" width="649" height="120"></span>';
       $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
-    S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
+    S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; if (S.sports.length) await loadOpen(); else S.open = [];
     if (!fromHash()) { S.view = 'home'; render(); maybeIntro(); }
     await loadMine(); render();
   })();

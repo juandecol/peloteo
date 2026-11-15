@@ -400,3 +400,18 @@ test("opciones: el WhatsApp se pide solo si el administrador lo activa; si no, s
   await b.req("POST", `/api/games/${g.id}/join`, { player: player("RS", 3, { whatsapp: "+56 9 3333 4444" }) });
   assert.equal(w.db.get<{ whatsapp: string }>("SELECT whatsapp FROM players WHERE initials = 'RS'")!.whatsapp, "+56933334444");
 });
+
+test("inicio: con ?sport= el resumen y la lista de un bloque muestran solo ese deporte", async () => {
+  const w = world();
+  await w.browser().req("POST", "/api/games", openTenis("MT")); // martes 18:00 (PM)
+  await w.browser().req("POST", "/api/games", { ...openTenis("PD"), sport_id: "D-PAD01", time: "18:30", capacity: 4 }); // martes 18:30 (PM)
+  const b = w.browser();
+  assert.deepEqual((await b.req("GET", "/api/open")).json[1], { date: DAY, am: 0, pm: 2 });
+  assert.deepEqual((await b.req("GET", "/api/open?sport=tenis")).json[1], { date: DAY, am: 0, pm: 1 });
+  // Sin tildes ni mayúsculas, como el grupo de deportes.
+  assert.deepEqual((await b.req("GET", "/api/open?sport=P%C3%81DEL")).json[1], { date: DAY, am: 0, pm: 1 });
+  assert.deepEqual((await b.req("GET", "/api/open?sport=bochas")).json[1], { date: DAY, am: 0, pm: 0 });
+  const pm = (await b.req("GET", `/api/open/block?date=${DAY}&half=pm&sport=padel`)).json;
+  assert.deepEqual(pm.map((g: any) => g.sport.key), ["padel"]);
+  assert.equal((await b.req("GET", `/api/open/block?date=${DAY}&half=pm`)).json.length, 2);
+});

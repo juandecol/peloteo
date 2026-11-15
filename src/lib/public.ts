@@ -356,8 +356,9 @@ interface OpenRow {
  * Encuentros abiertos con cupo, en turno vigente, de deportes y lugares vigentes,
  * entre dos fechas. Excluye los del propio visitante (no puede sumarse a ellos).
  * No filtra por nivel: el inicio aún no conoce el nivel del jugador.
+ * Con `sport` (nombre normalizado, como "tenis") solo los de ese deporte, en todos sus lugares.
  */
-async function openRows(db: Db, from: string, to: string, visitorId: string | Who, now: LocalNow): Promise<OpenRow[]> {
+async function openRows(db: Db, from: string, to: string, visitorId: string | Who, now: LocalNow, sport?: unknown): Promise<OpenRow[]> {
   const { results } = await db
     .prepare(
       `SELECT g.id, g.date, g.time, g.capacity, g.accepted_levels,
@@ -372,13 +373,14 @@ async function openRows(db: Db, from: string, to: string, visitorId: string | Wh
     )
     .bind(from, to, ...ownsParams(asWho(visitorId)))
     .all<OpenRow>();
-  return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now));
+  const key = typeof sport === "string" && sport.trim() ? sportKey(sport) : null;
+  return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now) && (!key || sportKey(g.sport_name) === key));
 }
 
 /** Resumen de los próximos 8 días (hoy incluido): cuántos partidos buscan jugadores en AM y PM. */
-export async function openOverview(db: Db, visitorId: string | Who, now: LocalNow): Promise<BlockSummary[]> {
+export async function openOverview(db: Db, visitorId: string | Who, now: LocalNow, sport?: unknown): Promise<BlockSummary[]> {
   const days = Array.from({ length: OVERVIEW_DAYS }, (_, i) => addDays(now.date, i));
-  const rows = await openRows(db, days[0]!, days[days.length - 1]!, visitorId, now);
+  const rows = await openRows(db, days[0]!, days[days.length - 1]!, visitorId, now, sport);
   return days.map((date) => {
     const mine = rows.filter((g) => g.date === date);
     return { date, am: mine.filter((g) => halfOf(g.time) === "am").length, pm: mine.filter((g) => halfOf(g.time) === "pm").length };
@@ -392,10 +394,11 @@ export async function listOpenBlock(
   half: unknown,
   visitorId: string | Who,
   now: LocalNow,
+  sport?: unknown,
 ): Promise<OpenGame[] | null> {
   if (!isDate(date) || (half !== "am" && half !== "pm")) return null;
   if (date < now.date || date > addDays(now.date, OVERVIEW_DAYS - 1)) return null;
-  const rows = (await openRows(db, date, date, visitorId, now)).filter((g) => halfOf(g.time) === half);
+  const rows = (await openRows(db, date, date, visitorId, now, sport)).filter((g) => halfOf(g.time) === half);
   if (rows.length === 0) return [];
   const { results: players } = await db
     .prepare(`SELECT game_id, initials, level FROM players WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`)
