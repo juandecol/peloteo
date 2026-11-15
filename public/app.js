@@ -122,6 +122,7 @@
   // ---------------- navegación ----------------
   async function go(view, opts) {
     S.view = view; S.err = ''; S.field = ''; S.confirm = null;
+    if (view === 'form') S.accepted = null; // un formulario nuevo parte sin niveles marcados
     if (!opts || !opts.keepScroll) window.scrollTo(0, 0);
     render();
     if (view === 'home') { S.preset = null; S.sports = (await get('/api/sports')) || []; await loadOpen(); }
@@ -357,8 +358,10 @@
         h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('¿Cuántos jugadores?', 'How many players?') + '</legend><div class="checks">' +
           sizes.map((n) => '<label><input type="radio" name="capacity" value="' + n + '"' + (n === sizes[0] ? ' checked' : '') + '>' + n + (n === 2 ? ' (singles)' : L(' (dobles)', ' (doubles)')) + '</label>').join('') + '</div></fieldset>';
       }
-      h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('Niveles que aceptas', 'Levels you accept') + ' <small style="font-weight:400" class="muted">' + L('(incluye el tuyo)', '(include yours)') + '</small></legend><div class="checks">' +
-        sport.categories.map((c) => '<label title="' + esc(catLabel(c)) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '" checked>' + L('Nivel ', 'Level ') + c.level + '</label>').join('') + '</div></fieldset>';
+      // Parten todos sin marcar (2026-11-15): se marcan los niveles de los rivales que se buscan.
+      h += '<fieldset style="border:0;padding:0;margin:0" aria-describedby="acc-hint"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('¿Con qué niveles quieres jugar?', 'Which levels do you want to play with?') + '</legend>' +
+        '<p id="acc-hint" class="small muted" style="margin:.15rem 0 .2rem">' + L('Marca uno o más niveles. Solo podrán sumarse jugadores de los niveles que marques.', 'Tick one or more levels. Only players of the levels you tick can join.') + '</p><div class="checks">' +
+        sport.categories.map((c) => '<label title="' + esc(catLabel(c)) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '"' + (S.accepted && S.accepted.includes(c.level) ? ' checked' : '') + '>' + L('Nivel ', 'Level ') + c.level + '</label>').join('') + '</div></fieldset>';
     }
     h += '<label class="f" for="email">' + L('Email de contacto', 'Contact email') + '</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="' + L('tu@correo.cl', 'you@email.com') + '" value="' + esc(prefs.email || '') + '">' +
       (waField() ? '<label class="f" for="wa">WhatsApp <small>' + L('(opcional)', '(optional)') + '</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' : '') +
@@ -588,9 +591,10 @@
       : !level ? L('Elige tu nivel de juego.', 'Choose your playing level.')
       : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((d.email || '').trim()) ? L('Revisa el email: lo usamos para avisarte.', 'Check your email address: we use it to keep you posted.')
       : (d.whatsapp && d.whatsapp.replace(/\D/g, '').length < 8) ? L('Revisa el número de WhatsApp o déjalo en blanco.', 'Check the WhatsApp number or leave it blank.')
-      : (!S.game && !(d.accepted_levels || []).length) ? L('Elige qué niveles aceptas.', 'Choose which levels you accept.')
-      : (!S.game && !(d.accepted_levels || []).includes(level)) ? L('Incluye tu propio nivel entre los aceptados.', 'Include your own level among the accepted ones.') : '';
-    if (S.err) { render(); return; }
+      : (!S.game && !(d.accepted_levels || []).length) ? L('Elige al menos un nivel de jugador.', 'Choose at least one player level.') : '';
+    // Los niveles marcados se conservan si el formulario se vuelve a dibujar con un error.
+    if (!S.game) S.accepted = (d.accepted_levels || []).map(Number);
+    if (S.err) { S.field = S.field || (/nivel de jugador|player level/.test(S.err) ? 'accepted_levels' : ''); render(); return; }
 
     const key = 'lvl_' + sport.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     prefs = Object.assign({}, prefs, { initials: ini, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : prefs.whatsapp || '', whatsapp_opt_in: !!d.whatsapp_opt_in });
@@ -853,11 +857,6 @@
       if (el.dataset.s === 'sportId') S.search.level = null;
       S.results = null;
       await loadSearchOffers(); render();
-    }
-    // Al elegir tu nivel al abrir un partido, se marca entre los aceptados.
-    if (el.name === 'level' && el.form && el.form.dataset.f === 'play') {
-      const box = el.form.querySelector('input[name="accepted_levels"][value="' + el.value + '"]');
-      if (box) box.checked = true;
     }
   });
 

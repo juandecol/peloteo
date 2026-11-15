@@ -137,18 +137,18 @@ export function validateCapacity(input: unknown, sizes: number[]): number {
   return n;
 }
 
-/** Niveles aceptados: al menos uno, entre las categorías del deporte e incluido el propio. */
-export function validateAcceptedLevels(input: unknown, sportLevels: number[], ownLevel: number): number[] {
+/**
+ * Niveles aceptados: al menos uno, entre las categorías del deporte. Desde el 2026-11-15
+ * no es obligatorio incluir el propio: quien abre elige el nivel de sus rivales.
+ */
+export function validateAcceptedLevels(input: unknown, sportLevels: number[]): number[] {
   const list = Array.isArray(input) ? input.map(Number) : [];
   if (list.some((n) => !Number.isInteger(n) || !sportLevels.includes(n))) {
     throw new MatchError("datos_invalidos", "Elige niveles de la lista.", "accepted_levels");
   }
   const levels = [...new Set(list)].sort((a, b) => a - b);
   if (levels.length === 0) {
-    throw new MatchError("datos_invalidos", "Elige qué niveles aceptas.", "accepted_levels");
-  }
-  if (!levels.includes(ownLevel)) {
-    throw new MatchError("datos_invalidos", "Incluye tu propio nivel entre los aceptados.", "accepted_levels");
+    throw new MatchError("datos_invalidos", "Elige al menos un nivel de jugador.", "accepted_levels");
   }
   return levels;
 }
@@ -340,7 +340,7 @@ export async function createGame(
   const sportLevels = await loadLevels(db, sport.id);
   const player = validatePlayer(input.player, sportLevels);
   const capacity = validateCapacity(input.capacity, parseIntList(sport.match_sizes, 2, 4));
-  const accepted = validateAcceptedLevels(input.accepted_levels, sportLevels, player.level);
+  const accepted = validateAcceptedLevels(input.accepted_levels, sportLevels);
 
   const { date, time } = input;
   if (!isDate(date) || !isTime(time)) {

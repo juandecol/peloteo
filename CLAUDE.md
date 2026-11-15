@@ -81,7 +81,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Pasado:** un turno se muestra y se acepta (abrir, unirse) hasta 15 minutos después de su hora de inicio; pasado ese margen ya no se muestra ni se acepta.
 - **Anticipación:** se puede agendar desde hoy hasta 15 días por adelantado (hoy + 15). Fechas fuera de ese rango no se muestran ni se aceptan.
 - **Cancha libre:** una cancha está libre en un turno si genera ese turno y no tiene un encuentro `confirmado` a esa hora. Los encuentros abiertos no ocupan cancha.
-- **Abrir partido:** el jugador elige deporte, lugar, día y hora; ingresa iniciales (2 a 4 letras), nivel y email; elige cuántos jugadores serán (una de las `match_sizes` del deporte; si hay una sola, se usa esa) y qué niveles acepta (al menos uno, entre las categorías del deporte, incluido el suyo). Solo se puede abrir si en ese momento queda al menos una cancha libre en el turno. El encuentro queda `abierto`, sin cancha asignada.
+- **Abrir partido:** el jugador elige deporte, lugar, día y hora; ingresa iniciales (2 a 4 letras), nivel y email; elige cuántos jugadores serán (una de las `match_sizes` del deporte; si hay una sola, se usa esa) y qué niveles acepta (al menos uno, entre las categorías del deporte; desde el 2026-11-15 no tiene que incluir el suyo: elige el nivel de sus rivales). Solo se puede abrir si en ese momento queda al menos una cancha libre en el turno. El encuentro queda `abierto`, sin cancha asignada.
 - **Unirse:** otro jugador puede sumarse a un encuentro `abierto` si su nivel está entre los `accepted_levels`. Al completarse `capacity` se asigna, en la misma operación, la primera cancha libre del turno (por nombre y luego ID) y el encuentro pasa a `confirmado`; se avisa a todos.
 - **Sin cancha:** si al completarse ya no queda cancha libre, el encuentro no se confirma: pasa a `sin_cancha` (completo, sin cancha, no admite más jugadores), se avisa a los jugadores y se les ofrecen otros turnos.
 - **Búsqueda:** por deporte, lugar, rango de fechas, rango de horas y el nivel del jugador. Devuelve solo encuentros a los que ese jugador puede unirse: `abierto`, con cupo, turno vigente, su nivel entre los aceptados y sin estar ya inscrito.
@@ -204,7 +204,7 @@ Las claves de proveedores van como secrets de Cloudflare, nunca en el repositori
 - Flujo público: deporte, lugar, calendario (solo días entre hoy y hoy + 15; si el rango cruza al mes siguiente, se puede avanzar a ese mes), horas del día, formulario, confirmación.
 - El calendario marca los días con encuentros que buscan jugadores.
 - El selector de nivel muestra el número y el texto de la categoría.
-- Al abrir un partido: selector de cantidad de jugadores (solo si el deporte permite más de una) y selección de niveles aceptados.
+- Al abrir un partido: selector de cantidad de jugadores (solo si el deporte permite más de una) y selección de niveles aceptados: "¿Con qué niveles quieres jugar?", todos sin marcar al comienzo, con la indicación "Marca uno o más niveles" (2026-11-15: con todos marcados, la gente desmarcaba creyendo que elegía). Sin ninguno, "Elige al menos un nivel de jugador."
 - La búsqueda pide el nivel del jugador (no una lista de niveles).
 - Archivos: `public/index.html` y `public/app.js` (flujo público), `public/styles.css` (compartido). Si un deporte se ofrece en un solo lugar, se salta la pantalla de lugares.
 - En los grupos de deportes se muestra el nombre más usado; si empatan, el que lleva tilde y no está en mayúsculas ("Pádel" antes que "PADEL").
@@ -283,7 +283,6 @@ Marcar aquí la respuesta cuando se defina:
 
 - Encuentro `sin_cancha`: ¿cómo se "ofrecen otros turnos"? (Supuesto actual: el aviso sugiere turnos con canchas libres y los jugadores deciden; el encuentro queda `sin_cancha` hasta que cancelen.) ¿Se confirma solo si se libera una cancha en ese turno?
 - ¿Se muestran encuentros abiertos de un turno que ya no tiene canchas libres? (Supuesto actual: sí, pero al completarse quedarán `sin_cancha`.)
-- ¿Quien abre debe incluir su propio nivel entre los aceptados? (Supuesto actual: sí.)
 - PBKDF2 con 100.000 iteraciones podría superar el límite de CPU del plan gratuito de Workers (10 ms por solicitud) en el login. Verificar al desplegar; si falla, bajar las iteraciones (el formato del hash las guarda, así que se puede migrar sin perder la contraseña).
 
 Decididas (2026-11-12):
@@ -302,6 +301,7 @@ Decididas (2026-11-12):
 - Niveles: quien abre define los niveles aceptados; solo se unen jugadores de esos niveles; la búsqueda muestra solo encuentros a los que el jugador puede unirse.
 - Bloqueos: el administrador bloquea una cancha por fecha y rango de horas, con motivo opcional; el turno bloqueado no se ofrece ni se asigna; si hay un encuentro confirmado, se advierte y, al confirmar, se cancela (migración `0004`).
 - Cancelación de un cupo: hasta 1 hora antes del inicio.
+- Niveles aceptados (2026-11-15): quien abre no tiene que incluir su propio nivel; parten sin marcar y se exige al menos uno.
 - Correo: Resend, remitente `avisos@peloteo.cl` ("Peloteo"); dominio definitivo https://peloteo.cl (2026-11-13).
 - Segundo factor (2026-11-13): opcional, QR generado sin dependencias y 10 códigos de respaldo; se hizo antes de la etapa 6.
 - Cuentas de jugadores (2026-11-14): opcionales, ingreso por enlace al correo, los partidos previos pasan a la cuenta. Preparadas (migración `0006`, lógica, rutas y pruebas) pero desactivadas hasta construir su interfaz.

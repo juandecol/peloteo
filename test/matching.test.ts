@@ -113,13 +113,13 @@ test("cantidad de jugadores: una de las permitidas por el deporte", () => {
   assert.throws(() => validateCapacity(3, [2, 4]), MatchError);
 });
 
-test("niveles aceptados: al menos uno, del deporte e incluido el propio", () => {
-  assert.deepEqual(validateAcceptedLevels([4, 3, 3], ALL, 3), [3, 4]);
-  assert.throws(() => validateAcceptedLevels([], ALL, 3), MatchError);
-  assert.throws(() => validateAcceptedLevels(undefined, ALL, 3), MatchError);
-  assert.throws(() => validateAcceptedLevels([4, 5], ALL, 3), MatchError);
-  assert.throws(() => validateAcceptedLevels([3, 6], ALL, 3), MatchError);
-  assert.throws(() => validateAcceptedLevels([3, 5], [1, 2, 3, 4], 3), MatchError);
+test("niveles aceptados: al menos uno y del deporte; el propio no es obligatorio", () => {
+  assert.deepEqual(validateAcceptedLevels([4, 3, 3], ALL), [3, 4]);
+  assert.deepEqual(validateAcceptedLevels([4, 5], ALL), [4, 5]);
+  assert.throws(() => validateAcceptedLevels([], ALL), MatchError);
+  assert.throws(() => validateAcceptedLevels(undefined, ALL), MatchError);
+  assert.throws(() => validateAcceptedLevels([3, 6], ALL), MatchError);
+  assert.throws(() => validateAcceptedLevels([3, 5], [1, 2, 3, 4]), MatchError);
 });
 
 // ---------------------------------------------------------------
@@ -196,8 +196,18 @@ test("abrir: rechaza deporte inexistente, fecha inválida, niveles y datos del j
   await rejects(createGame(db, tenis({ sport_id: "D-NOPE" }), "V-1", now), "deporte_no_existe");
   await rejects(createGame(db, tenis({ date: "2026-11-31" }), "V-1", now), "datos_invalidos");
   await rejects(createGame(db, tenis({ player: me({ email: "x" }) }), "V-1", now), "datos_invalidos");
-  await rejects(createGame(db, tenis({ accepted_levels: [1, 2] }), "V-1", now), "datos_invalidos");
+  await rejects(createGame(db, tenis({ accepted_levels: [] }), "V-1", now), "datos_invalidos");
+  await rejects(createGame(db, tenis({ accepted_levels: [9] }), "V-1", now), "datos_invalidos");
   assert.equal(db.count("SELECT count(*) AS n FROM games"), 0);
+});
+
+test("abrir: los niveles aceptados no tienen que incluir el propio (2026-11-15)", async () => {
+  const db = emptyGamesDb();
+  // Quien abre es nivel 3 y busca rivales de nivel 1 o 2.
+  const r = await createGame(db, tenis({ accepted_levels: [2, 1] }), "V-1", now);
+  assert.deepEqual(r.game.accepted_levels, [1, 2]);
+  // Sin elegir ninguno: se pide al menos uno.
+  await assert.rejects(createGame(db, tenis({ time: "19:00", accepted_levels: [] }), "V-2", now), (e: any) => e.message === "Elige al menos un nivel de jugador." && e.field === "accepted_levels");
 });
 
 test("concurrencia: con una cancha libre, dos jugadores pueden abrir partido a la vez", async () => {
