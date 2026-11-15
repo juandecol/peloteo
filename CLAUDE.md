@@ -166,6 +166,7 @@ Una sola función `notify(evento, jugador, encuentro)` con canales intercambiabl
 
 - **Etapa inicial (etapa 5, hecha):** correo con Resend y, en la pantalla de confirmación, enlace `wa.me` para que los jugadores emparejados se escriban entre ellos.
   - Envío con `fetch` a `POST https://api.resend.com/emails` (sin SDK), en `src/lib/email.ts`. Remitente `Peloteo <avisos@peloteo.cl>`; enlaces a `https://peloteo.cl` (`SITE_URL` y `MAIL_FROM` en `vars` de `wrangler.jsonc`).
+  - Correo entrante (2026-11-15): Cloudflare Email Routing en `peloteo.cl` (MX `route1/2/3.mx.cloudflare.net`, SPF `include:_spf.mx.cloudflare.net` y DKIM `cf2024-1._domainkey`). `contacto@peloteo.cl` (el de las Políticas de Privacidad) se reenvía a la casilla personal del dueño; se configura en el panel de Cloudflare › peloteo.cl › Email › Email Routing. Es independiente del envío: Resend usa sus propios registros en el subdominio `send.peloteo.cl`, y `avisos@peloteo.cl` no recibe respuestas.
   - La clave es el secret `RESEND_API_KEY` de Cloudflare (ya cargado). Nunca en archivos ni en `.dev.vars` del repositorio.
   - Canales según el entorno (`src/notices.ts`): con `EMAIL_MODE = "resend"` y la clave, correo real; en `localhost` (o con `EMAIL_MODE = "consola"`, o sin clave) el correo completo se muestra en la consola de `wrangler dev` y no se envía; sin `EMAIL_MODE` (pruebas), solo el registro.
   - Los avisos se envían después de responder (`waitUntil`). Un error de Resend se registra sin el email del jugador y no afecta la operación.
