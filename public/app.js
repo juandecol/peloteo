@@ -557,7 +557,7 @@
     // nada se corre al cambiar de idioma.
     const both = (es, en) => '<span class="both"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>' + es + '</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>' + en + '</span></span>';
     const langBtn = (l, code, name) => '<button type="button" data-a="lang" data-l="' + l + '" lang="' + l + '" aria-pressed="' + (lang === l) + '" aria-label="' + name + '" title="' + name + '">' + FLAGS[l] + '<span>' + code + '</span></button>';
-    $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="' + L('Peloteo, ir al inicio', 'Peloteo, go to home') + '" width="648" height="120"></button><nav aria-label="' + L('Principal', 'Main') + '">' +
+    $('#bar').innerHTML = '<button type="button" class="brand" data-a="go" data-v="home"><img src="/img/logo.png" alt="' + L('Peloteo, ir al inicio', 'Peloteo, go to home') + '" width="649" height="120"></button><nav aria-label="' + L('Principal', 'Main') + '">' +
       '<button type="button" data-a="go" data-v="search" aria-current="' + (S.view === 'search') + '">' + icon('buscar', 18) + '<span class="lbl">' + both('Buscar', 'Search') + '</span></button>' +
       '<span class="langs" role="group" aria-label="Idioma / Language">' + langBtn('es', 'ESP', 'Español') + langBtn('en', 'ENG', 'English') + '</span>' +
       '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">' + icon('mis', 18) + '<span class="lbl">' + both('Mis partidos', 'My matches') + '</span>' + (n ? '<b aria-label="' + n + L(' activos', ' active') + '">' + n + '</b>' : '') + '</button>' +
@@ -870,7 +870,7 @@
     if (!today) {
       // Sin conexión (o el servidor no responde): la app abre igual desde su copia
       // guardada y lo explica, con el logotipo en la barra.
-      $('#bar').innerHTML = '<span class="brand"><img src="/img/logo.png" alt="Peloteo" width="648" height="120"></span>';
+      $('#bar').innerHTML = '<span class="brand"><img src="/img/logo.png" alt="Peloteo" width="649" height="120"></span>';
       $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
     S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; S.open = open || [];
     if (!fromHash()) { S.view = 'home'; render(); maybeIntro(); }
