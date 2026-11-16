@@ -470,3 +470,5 @@ legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
 .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 /* Héroe del inicio 30 % más bajo (2026-11-16): de 18,5 rem a 13 rem de alto mínimo. */
 .hero{min-height:13rem}
+/* Borde gris medio-oscuro del héroe, para separarlo del fondo claro (2026-11-16). */
+.hero{border:1px solid #5F6B65}
