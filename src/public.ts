@@ -35,7 +35,7 @@ import {
 } from "./lib/accounts.ts";
 import { renderLoginEmail } from "./lib/email.ts";
 import type { Who } from "./lib/identity.ts";
-import { getGameByToken, getMyGame, listOpenBlock, openOverview, getPublicSport, listMyGames, listSportGroups, listVenuesForSport } from "./lib/public.ts";
+import { getGameByToken, getMyGame, listOpenBlock, listPlaces, openOverview, getPublicSport, listMyGames, listSportGroups, listVenuesForSport } from "./lib/public.ts";
 import { isDate, isMonth, lastBookableDate, localNow } from "./lib/time.ts";
 import { asLang, LANG_COOKIE, SPORTS_EN, translateError } from "./lib/i18n.ts";
 
@@ -157,6 +157,7 @@ export function publicRoutes(options: AppOptions = {}) {
 
   app.get("/sports", async (c) => c.json(await listSportGroups(c.env.DB)));
 
+  app.get("/places", async (c) => c.json(await listPlaces(c.env.DB)));
   app.get("/venues", async (c) => c.json(await listVenuesForSport(c.env.DB, c.req.query("sport") ?? "", today(c))));
 
   app.get("/sports/:id", async (c) => {
@@ -246,9 +247,9 @@ export function publicRoutes(options: AppOptions = {}) {
 
   // Inicio: partidos que buscan jugadores en los próximos 8 días, por AM y PM.
   // ?sport= (nombre normalizado, como "tenis") limita al deporte elegido en el inicio.
-  app.get("/open", async (c) => c.json(await openOverview(c.env.DB, c.get("who"), today(c), c.req.query("sport"), mode(c))));
+  app.get("/open", async (c) => c.json(await openOverview(c.env.DB, c.get("who"), today(c), c.req.query("sport"), mode(c), c.req.query("venue"))));
   app.get("/open/block", async (c) => {
-    const games = await listOpenBlock(c.env.DB, c.req.query("date"), c.req.query("half"), c.get("who"), today(c), c.req.query("sport"));
+    const games = await listOpenBlock(c.env.DB, c.req.query("date"), c.req.query("half"), c.get("who"), today(c), c.req.query("sport"), c.req.query("venue"));
     if (!games) return c.json({ error: "Elige un día de los próximos 8 y AM o PM.", code: "datos_invalidos" }, 400);
     return c.json(games);
   });

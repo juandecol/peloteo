@@ -219,10 +219,13 @@
 
   function vVenues() {
     let h = S.venues.length ? '<ul class="list">' + S.venues.map((v) =>
-      '<li><button type="button" class="row" data-a="go" data-v="venue" data-venue="' + esc(v.id) + '"><span><span class="name">' + esc(v.name) + '</span><span class="meta">ID ' + esc(v.id) + '. ' + plural(v.sports, 'deporte', 'deportes') + ', ' + plural(v.courts, 'cancha', 'canchas') + '</span></span><span class="go">Abrir</span></button></li>').join('') + '</ul>'
+      '<li><button type="button" class="row" data-a="go" data-v="venue" data-venue="' + esc(v.id) + '"><span><span class="name">' + esc(v.name) + ' ' + venueTag(v) + '</span><span class="meta">ID ' + esc(v.id) + '. Orden ' + (v.sort_order || 0) + '. ' + plural(v.sports, 'deporte', 'deportes') + ', ' + plural(v.courts, 'cancha', 'canchas') + '</span></span><span class="go">Abrir</span></button></li>').join('') + '</ul>'
       : '<div class="card"><p>No hay lugares todavía. Crea el primero.</p></div>';
     return h + '<div class="actions"><button type="button" class="btn" data-a="go" data-v="venueForm" data-venue="">Agregar lugar</button></div>';
   }
+
+  // Lugar visible u oculto para los jugadores (2026-11-16).
+  const venueTag = (v) => (v.visible === false ? '<span class="tag off">Oculto</span>' : '<span class="tag ok">Visible</span>');
 
   function vVenueForm() {
     const ve = S.venueId ? S.venue : null;
@@ -232,6 +235,10 @@
       '<label class="f" for="vm">Enlace de Google Maps <small>(opcional)</small></label><input id="vm" name="maps_url" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/..." value="' + esc(ve ? ve.maps_url : '') + '">' +
       '<label class="f" for="vb">Enlace para reservar en línea <small>(opcional)</small></label><input id="vb" name="booking_url" type="url" inputmode="url" placeholder="https://..." value="' + esc(ve ? ve.booking_url || '' : '') + '" aria-describedby="vb-h">' +
       '<p id="vb-h" class="small muted">Página del club donde se reserva la cancha. Por ahora solo se guarda; más adelante se mostrará a los jugadores.</p>' +
+      '<div class="checks"><label><input type="checkbox" name="visible" value="1"' + (!ve || ve.visible !== false ? ' checked' : '') + '>Visible para los jugadores</label></div>' +
+      '<p class="small muted">Desmárcalo para preparar el lugar sin que aparezca en el sitio y publicarlo después. Aunque esté marcado, solo aparece cuando tiene al menos un deporte visible con canchas operativas. Los partidos ya abiertos siguen su curso.</p>' +
+      '<label class="f" for="vo">Orden en el selector</label><input id="vo" name="sort_order" type="number" inputmode="numeric" min="0" max="999" step="1" style="max-width:8rem" value="' + (ve ? ve.sort_order || 0 : 0) + '" aria-describedby="vo-h">' +
+      '<p id="vo-h" class="small muted">Número entero de 0 a 999: el menor aparece primero en el selector de lugares del sitio. Si dos lugares tienen el mismo número, se ordenan alfabéticamente.</p>' +
       venueHoursFields(ve ? ve.hours : '') +
       errBox() + affectedBox('delConfirm') + '<div class="actions"><button class="btn" type="submit">Guardar lugar</button>' + (ve ? delBtn('venue', 'Eliminar lugar') : '') + '</div></form>';
   }
@@ -254,7 +261,7 @@
     const ve = S.venue;
     if (!ve) return '<p>Ese lugar ya no existe.</p>';
     let h = crumbs([{ t: 'Lugares', go: 'venues' }, { t: ve.name }]) +
-      '<div class="card"><h2>' + esc(ve.name) + '</h2><p class="id">ID ' + esc(ve.id) + '</p><p>' + esc(ve.address || 'Sin dirección') + '</p>' +
+      '<div class="card"><h2>' + esc(ve.name) + ' ' + venueTag(ve) + '</h2><p class="id">ID ' + esc(ve.id) + '</p><p>' + esc(ve.address || 'Sin dirección') + '</p>' +
       (ve.maps_url ? '<p><a href="' + esc(ve.maps_url) + '" target="_blank" rel="noopener">Ver en Google Maps</a></p>' : '') +
       (ve.booking_url ? '<p><a href="' + esc(ve.booking_url) + '" target="_blank" rel="noopener">Reservar en línea</a></p>' : '') +
       '<p class="small"><b>Horario:</b> ' + esc(hoursSummary(ve.hours)) + '</p>' +
@@ -577,7 +584,7 @@
     async venue(d) {
       const f = document.querySelector('form[data-f="venue"]');
       const val = (sel) => { const el = f.querySelector(sel); return el ? el.value : ''; };
-      d = Object.assign({}, d, { hours: [0, 1, 2, 3, 4, 5, 6].map((n) => ((d.hours || []).includes(n) ? [val('[data-hopen="' + n + '"]'), val('[data-hclose="' + n + '"]')] : null)) });
+      d = Object.assign({}, d, { visible: (d.visible || []).length > 0, hours: [0, 1, 2, 3, 4, 5, 6].map((n) => ((d.hours || []).includes(n) ? [val('[data-hopen="' + n + '"]'), val('[data-hclose="' + n + '"]')] : null)) });
       const r = S.venueId ? await api('PUT', '/admin/api/venues/' + S.venueId, d) : await api('POST', '/admin/api/venues', d);
       if (!r.ok) { fail(r); return; }
       toast('Lugar guardado.'); S.venue = r.data; await go('venue', { venueId: r.data.id });

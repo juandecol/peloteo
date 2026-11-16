@@ -145,8 +145,11 @@
     render();
   }
 
-  async function chooseSport(key) {
+  async function chooseSport(key, venueId) {
     S.sportKey = key; S.offers = (await get('/api/venues?sport=' + encodeURIComponent(key))) || [];
+    // Con un lugar elegido en el inicio, se salta la pantalla de lugares.
+    const pick = venueId && S.offers.find((o) => o.venue.id === venueId);
+    if (pick) return chooseOffer(pick);
     if (S.offers.length === 1) return chooseOffer(S.offers[0]);
     go('venue');
   }
@@ -216,7 +219,7 @@
   function vHome() {
     // La foto de fondo (public/img/inicio-tenis.webp) es decorativa: va en CSS, no como <img>.
     let h = '<section class="hero photo"><div class="shade"></div><h1 class="' + lang + '">' + L('¿Jugamos?', "Let's play?") + '</h1><p>' +
-      (coord() ? L('Elige deporte, lugar y hora, y encuentra con quién jugar.', 'Pick a sport, place and time, and find someone to play with.')
+      (coord() ? L('Elige lugar, deporte y hora, y encuentra con quién jugar.', 'Pick a place, sport and time, and find someone to play with.')
         : L('Elige deporte, lugar y hora. Si alguien de tu nivel busca partido, les asignamos cancha.', "Pick a sport, place and time. If someone at your level is looking for a match, we'll assign you a court.")) + '</p>' +
       '<button type="button" class="how" data-a="intro">' + L('¿Cómo funciona?', 'How does it work?') + '</button></section>';
     if (!S.sports.length) {
@@ -225,18 +228,38 @@
     return h + vWeek();
   }
 
-  // Deporte del inicio: siempre un menú desplegable (hoy solo tenis; listo para sumar otros).
-  // Por defecto: el último elegido en este navegador; si no, tenis (el deporte principal); si no, el primero.
-  function homeSport() {
-    const has = (k) => S.sports.some((n) => n.key === k);
-    return prefs.sport && has(prefs.sport) ? prefs.sport : has('tenis') ? 'tenis' : (S.sports[0] && S.sports[0].key) || '';
+  // Inicio (2026-11-16): primero el lugar y luego el deporte, ambos en menús desplegables.
+  // Lugar: solo los disponibles (visibles y con algún deporte), en el orden del administrador
+  // (luego alfabético). Por defecto, el último elegido en este navegador; si no, el primero.
+  function homePlace() {
+    const list = S.places || [];
+    return list.find((p) => p.id === prefs.venue) || list[0] || null;
   }
-  const homeSportName = () => { const n = S.sports.find((x) => x.key === homeSport()); return n ? sportLabel(n.name) : ''; };
+  const homeVenue = () => { const p = homePlace(); return p ? p.id : ''; };
+  const homeVenueName = () => { const p = homePlace(); return p ? p.name : ''; };
+  // Deporte: los del lugar elegido, en su orden. Por defecto el último elegido; si no, tenis; si no, el primero.
+  function homeSports() {
+    const p = homePlace();
+    if (!p) return [];
+    return p.sports.map((s) => { const g = S.sports.find((n) => n.key === s.key); return { key: s.key, name: g ? g.name : s.name }; });
+  }
+  function homeSport() {
+    const list = homeSports();
+    const has = (k) => list.some((n) => n.key === k);
+    return prefs.sport && has(prefs.sport) ? prefs.sport : has('tenis') ? 'tenis' : (list[0] && list[0].key) || '';
+  }
+  const homeSportName = () => { const n = homeSports().find((x) => x.key === homeSport()); return n ? sportLabel(n.name) : ''; };
+  // Las etiquetas llevan ambos idiomas superpuestos (el inactivo invisible): miden lo mismo en ESP y ENG.
+  const pickLabel = (id, es, en) => '<label class="f" for="' + id + '"><span class="both start"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>' + es + '</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>' + en + '</span></span></label>';
+  function venueSelect() {
+    const cur = homeVenue();
+    return pickLabel('ve-home', 'Lugar:', 'Venue:') + '<select id="ve-home" data-home="venue">' +
+      (S.places || []).map((p) => '<option value="' + esc(p.id) + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select>';
+  }
   function sportSelect() {
     const cur = homeSport();
-    // La etiqueta lleva ambos idiomas superpuestos (el inactivo invisible): mide lo mismo en ESP y ENG.
-    return '<label class="f" for="sp-home"><span class="both start"><span' + (lang === 'es' ? '' : ' class="off" aria-hidden="true"') + '>Deporte:</span><span' + (lang === 'en' ? '' : ' class="off" aria-hidden="true"') + '>Sport:</span></span></label><select id="sp-home" data-home="sport">' + S.sports.map((n) =>
-      '<option value="' + esc(n.key) + '"' + (n.key === cur ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + (coord() ? '' : ' · ' + plural(n.venues, L('lugar', 'place'), L('lugares', 'places')) + ', ' + plural(n.courts, L('cancha', 'court'), L('canchas', 'courts'))) + '</option>').join('') + '</select>';
+    return pickLabel('sp-home', 'Deporte:', 'Sport:') + '<select id="sp-home" data-home="sport">' + homeSports().map((n) =>
+      '<option value="' + esc(n.key) + '"' + (n.key === cur ? ' selected' : '') + '>' + esc(sportLabel(n.name)) + '</option>').join('') + '</select>';
   }
 
   // Calendario horizontal de 8 días (hoy incluido): un bloque AM y uno PM por día.
@@ -253,7 +276,7 @@
       return '<button type="button" class="blk ' + half + (n ? ' on' : none ? ' none' : '') + '"' + (none ? ' disabled' : ' data-a="block" data-d="' + d.date + '" data-h="' + half + '"') + ' aria-label="' + label + '">' + half.toUpperCase() + '</button>';
     };
     return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">' + L('¿Buscas con quién jugar?', 'Looking for someone to play with?') + '</h2>' +
-      '<div class="picker">' + sportSelect() + '</div>' +
+      '<div class="picker">' + venueSelect() + sportSelect() + '</div>' +
       '<p>' + L('Toca un bloque: si está <b class="dot"></b> naranjo, hay partidos esperando jugadores. En cualquier bloque también puedes crear tu propio partido. Los grises no tienen horas disponibles.',
         "Tap a block: if it's <b class=\"dot\"></b> orange, there are matches waiting for players. From any block you can also create your own match. Grey ones have no times available.") + '</p>' +
       (days.length ? '<div class="days8">' + days.map((d) => {
@@ -268,7 +291,7 @@
     const b = S.block;
     if (!b) return '';
     let h = '<p class="crumbs"><button type="button" data-a="go" data-v="home">‹ ' + L('Inicio', 'Home') + '</button></p>' +
-      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF(b.half) + '</h1>' + (homeSportName() ? '<p class="muted">' + esc(homeSportName()) + '</p>' : '');
+      '<h1 class="h">' + cap(fecha(b.date)) + ' · ' + HALF(b.half) + '</h1>' + (homeSportName() ? '<p class="muted">' + esc(homeSportName()) + (homeVenueName() ? ' · ' + esc(homeVenueName()) : '') + '</p>' : '');
     if (!S.blockGames) return h + '<p class="muted">' + L('Cargando…', 'Loading…') + '</p>';
     if (!S.blockGames.length) {
       h += '<p class="muted">' + L('Nadie busca jugadores ' + (b.half === 'am' ? 'en la mañana' : 'en la tarde') + ' de ese día. Abre tú un partido y otros podrán sumarse.',
@@ -287,9 +310,12 @@
     return h;
   }
 
-  // Resumen del inicio y lista de un bloque: solo del deporte elegido en el inicio.
-  const sportQ = () => (homeSport() ? '&sport=' + encodeURIComponent(homeSport()) : '');
-  async function loadOpen() { S.open = (await get('/api/open?' + sportQ().slice(1))) || []; }
+  // Resumen del inicio y lista de un bloque: solo del lugar y deporte elegidos en el inicio.
+  const sportQ = () => (homeSport() ? '&sport=' + encodeURIComponent(homeSport()) : '') + (homeVenue() ? '&venue=' + encodeURIComponent(homeVenue()) : '');
+  async function loadOpen() {
+    S.places = (await get('/api/places')) || [];
+    S.open = S.places.length ? (await get('/api/open?' + sportQ().slice(1))) || [] : [];
+  }
 
   function vVenue() {
     if (!S.offers.length) return '<p>' + L('Ese deporte ya no está disponible.', 'That sport is no longer available.') + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Volver al inicio', 'Back to home') + '</button></div>';
@@ -799,7 +825,7 @@
     block(d) { S.block = { date: d.d, half: d.h }; S.fromBlock = false; go('block'); },
     allDay() { S.preset = null; render(); },
     // Crear un partido desde un bloque del inicio, con el deporte elegido arriba.
-    createIn() { const k = homeSport(); if (!k || !S.block) return; S.preset = { date: S.block.date, half: S.block.half }; S.fromBlock = false; chooseSport(k); },
+    createIn() { const k = homeSport(); if (!k || !S.block) return; S.preset = { date: S.block.date, half: S.block.half }; S.fromBlock = false; chooseSport(k, homeVenue()); },
     intro() { openIntro(); },
     lang(d) {
       if (d.l === lang) return;
@@ -1004,6 +1030,12 @@
     if (el.dataset && el.dataset.home === 'sport') {
       rememberSport(el.value); S.open = null; render(); await loadOpen(); render();
       const sel = document.getElementById('sp-home'); if (sel) sel.focus();
+      return;
+    }
+    if (el.dataset && el.dataset.home === 'venue') {
+      prefs = Object.assign({}, prefs, { venue: el.value }); LS.set('peloteo_prefs', prefs);
+      S.open = null; render(); await loadOpen(); render();
+      const sel = document.getElementById('ve-home'); if (sel) sel.focus();
       return;
     }
     if (el.dataset && el.dataset.s && S.search) {

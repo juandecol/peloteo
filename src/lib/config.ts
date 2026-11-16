@@ -141,6 +141,10 @@ export interface Venue {
   booking_url: string;
   /** Horario semanal (migración 0014): "HH:MM-HH:MM" o vacío por día, 0 = domingo; "" = sin horario propio. */
   hours: string;
+  /** Orden en el selector de lugares del inicio (0 a 999): menor primero; con el mismo número, alfabético. */
+  sort_order: number;
+  /** Lo decide el administrador: si se ofrece a los jugadores (2026-11-16). */
+  visible: boolean;
   sports: number;
   courts: number;
 }
@@ -148,13 +152,13 @@ export interface Venue {
 export async function listVenues(db: Db): Promise<Venue[]> {
   const { results } = await db
     .prepare(
-      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url, v.hours,
+      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url, v.hours, v.sort_order, v.visible,
               (SELECT count(*) FROM sports s WHERE s.venue_id = v.id AND s.deleted_at IS NULL) AS sports,
               (SELECT count(*) FROM courts c WHERE c.venue_id = v.id AND c.deleted_at IS NULL) AS courts
-       FROM venues v WHERE v.deleted_at IS NULL ORDER BY v.name, v.id`,
+       FROM venues v WHERE v.deleted_at IS NULL ORDER BY v.sort_order, v.name COLLATE NOCASE, v.id`,
     )
-    .all<Venue>();
-  return results;
+    .all<Omit<Venue, "visible"> & { visible: number }>();
+  return results.map((v) => ({ ...v, visible: v.visible === 1 }));
 }
 
 export async function getVenue(db: Db, id: string): Promise<Venue> {
@@ -194,14 +198,25 @@ function validateVenue(input: Record<string, unknown>) {
     maps_url: optionalUrl(input.maps_url, "maps_url"),
     booking_url: optionalUrl(input.booking_url, "booking_url"),
     hours: validateVenueHours(input.hours),
+    sort_order: validateSortOrder(input.sort_order),
+    // Sin el campo: visible al crear y sin cambios al editar.
+    visible: typeof input.visible === "boolean" ? (input.visible ? 1 : 0) : null,
   };
+}
+
+/** Orden en un selector: entero de 0 a 999. Sin el campo devuelve null: 0 al crear y sin cambios al editar. */
+function validateSortOrder(v: unknown): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 999) throw invalid("El orden debe ser un número entero entre 0 y 999.", "sort_order");
+  return n;
 }
 
 export async function createVenue(db: Db, input: Record<string, unknown>): Promise<Venue> {
   const v = validateVenue(input);
   const id = newId("L");
-  await db.prepare("INSERT INTO venues (id, name, address, maps_url, booking_url, hours) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, v.name, v.address, v.maps_url, v.booking_url, v.hours ?? "").run();
+  await db.prepare("INSERT INTO venues (id, name, address, maps_url, booking_url, hours, sort_order, visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, v.name, v.address, v.maps_url, v.booking_url, v.hours ?? "", v.sort_order ?? 0, v.visible ?? 1).run();
   return getVenue(db, id);
 }
 
@@ -233,8 +248,12 @@ export async function updateVenue(db: Db, id: string, input: Record<string, unkn
     }
   }
   const r = await db
-    .prepare("UPDATE venues SET name = ?, address = ?, maps_url = ?, booking_url = ?, hours = ? WHERE id = ? AND deleted_at IS NULL")
-    .bind(v.name, v.address, v.maps_url, v.booking_url, hours, id)
+    .prepare(
+      `UPDATE venues SET name = ?, address = ?, maps_url = ?, booking_url = ?, hours = ?, sort_order = COALESCE(?, sort_order),
+         visible = COALESCE(?, visible)
+       WHERE id = ? AND deleted_at IS NULL`,
+    )
+    .bind(v.name, v.address, v.maps_url, v.booking_url, hours, v.sort_order, v.visible, id)
     .run();
   if (r.meta.changes === 0) throw new ConfigError("no_existe", "Ese lugar ya no existe.");
   return getVenue(db, id);
@@ -350,12 +369,7 @@ function validateSport(input: Record<string, unknown>) {
   // Sin el campo: visible al crear y sin cambios al editar.
   const visible = typeof input.visible === "boolean" ? (input.visible ? 1 : 0) : null;
   // Orden en el selector: entero de 0 a 999. Sin el campo: 0 al crear y sin cambios al editar.
-  let sortOrder: number | null = null;
-  if (input.sort_order !== undefined && input.sort_order !== null && input.sort_order !== "") {
-    const n = Number(input.sort_order);
-    if (!Number.isInteger(n) || n < 0 || n > 999) throw invalid("El orden debe ser un número entero entre 0 y 999.", "sort_order");
-    sortOrder = n;
-  }
+  const sortOrder = validateSortOrder(input.sort_order);
   return { name, match_sizes: sizes.join(","), categories, categoriesEn, visible, sortOrder };
 }
 

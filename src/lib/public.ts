@@ -36,7 +36,7 @@ interface SportRow {
   courts: number;
 }
 
-/** Deportes vigentes, visibles para los jugadores y con al menos una cancha operativa. */
+/** Deportes vigentes, visibles para los jugadores (ellos y su lugar) y con al menos una cancha operativa. */
 async function activeSports(db: Db): Promise<SportRow[]> {
   const { results } = await db
     .prepare(
@@ -44,7 +44,7 @@ async function activeSports(db: Db): Promise<SportRow[]> {
               (SELECT count(*) FROM courts c
                WHERE c.sport_id = s.id AND c.deleted_at IS NULL AND c.status = 'operativa') AS courts
        FROM sports s JOIN venues v ON v.id = s.venue_id
-       WHERE s.deleted_at IS NULL AND s.visible = 1 AND v.deleted_at IS NULL
+       WHERE s.deleted_at IS NULL AND s.visible = 1 AND v.deleted_at IS NULL AND v.visible = 1
        ORDER BY s.name, v.name`,
     )
     .all<SportRow>();
@@ -85,6 +85,38 @@ export async function listSportGroups(db: Db): Promise<SportGroup[]> {
     .map(({ order: _order, ...g }) => g);
 }
 
+export interface Place {
+  id: string;
+  name: string;
+  /** Deportes disponibles en el lugar (nombre normalizado y nombre), en el orden del selector. */
+  sports: { key: string; name: string }[];
+}
+
+/**
+ * Lugares disponibles para el selector del inicio (2026-11-16): visibles y con al menos
+ * un deporte disponible. Orden del administrador (menor primero; con el mismo número,
+ * alfabético); el primero es el elegido por defecto.
+ */
+export async function listPlaces(db: Db): Promise<Place[]> {
+  const sports = await activeSports(db);
+  if (sports.length === 0) return [];
+  const ids = [...new Set(sports.map((s) => s.venue_id))];
+  const { results: venues } = await db
+    .prepare(`SELECT id, name, sort_order FROM venues WHERE id IN (${placeholders(ids.length)})`)
+    .bind(...ids)
+    .all<{ id: string; name: string; sort_order: number }>();
+  return venues
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "es"))
+    .map((v) => ({
+      id: v.id,
+      name: v.name,
+      sports: sports
+        .filter((s) => s.venue_id === v.id)
+        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "es"))
+        .map((s) => ({ key: sportKey(s.name), name: s.name })),
+    }));
+}
+
 export interface PublicSport {
   id: string;
   name: string;
@@ -120,11 +152,11 @@ export async function listVenuesForSport(db: Db, key: string, now: LocalNow): Pr
   const cats = await categoriesOf(db, ids);
   const { results: venues } = await db
     .prepare(
-      `SELECT id, name, address, maps_url FROM venues
+      `SELECT id, name, address, maps_url, sort_order FROM venues
        WHERE id IN (${placeholders(sports.length)})`,
     )
     .bind(...sports.map((s) => s.venue_id))
-    .all<VenueOffer["venue"]>();
+    .all<VenueOffer["venue"] & { sort_order: number }>();
   const { results: open } = await db
     .prepare(
       `SELECT sport_id, date, time FROM games
@@ -145,7 +177,8 @@ export async function listVenuesForSport(db: Db, key: string, now: LocalNow): Pr
       open_games: open.filter((g) => g.sport_id === s.id && isSlotOpen(g.date, g.time, now)).length,
     }))
     .filter((o) => o.venue)
-    .sort((a, b) => a.venue.name.localeCompare(b.venue.name, "es"));
+    // Orden del administrador (2026-11-16): menor primero; con el mismo número, alfabético.
+    .sort((a, b) => a.venue.sort_order - b.venue.sort_order || a.venue.name.localeCompare(b.venue.name, "es"));
 }
 
 /** Datos públicos de un deporte de un lugar (para el formulario). */
@@ -380,7 +413,15 @@ interface OpenRow {
  * No filtra por nivel: el inicio aún no conoce el nivel del jugador.
  * Con `sport` (nombre normalizado, como "tenis") solo los de ese deporte, en todos sus lugares.
  */
-async function openRows(db: Db, from: string, to: string, visitorId: string | Who, now: LocalNow, sport?: unknown): Promise<OpenRow[]> {
+async function openRows(
+  db: Db,
+  from: string,
+  to: string,
+  visitorId: string | Who,
+  now: LocalNow,
+  sport?: unknown,
+  venue?: unknown,
+): Promise<OpenRow[]> {
   const { results } = await db
     .prepare(
       `SELECT g.id, g.date, g.time, g.capacity, g.accepted_levels,
@@ -396,16 +437,18 @@ async function openRows(db: Db, from: string, to: string, visitorId: string | Wh
     .bind(...ownsParams(asWho(visitorId)), from, to)
     .all<OpenRow>();
   const key = typeof sport === "string" && sport.trim() ? sportKey(sport) : null;
-  return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now) && (!key || sportKey(g.sport_name) === key));
+  const place = typeof venue === "string" && venue ? venue : null;
+  return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now) && (!key || sportKey(g.sport_name) === key) && (!place || g.venue_id === place));
 }
 
 /**
  * Mitades del día (por fecha) en que queda al menos una hora para crear un partido
  * del deporte (todos sus lugares; sin `sport`, cualquier deporte activo): "fecha|am".
  */
-async function halvesWithRoom(db: Db, dates: string[], now: LocalNow, sport: unknown, mode: CourtMode): Promise<Set<string>> {
+async function halvesWithRoom(db: Db, dates: string[], now: LocalNow, sport: unknown, mode: CourtMode, venue?: unknown): Promise<Set<string>> {
   const key = typeof sport === "string" && sport.trim() ? sportKey(sport) : null;
-  const sports = (await activeSports(db)).filter((s) => !key || sportKey(s.name) === key);
+  const place = typeof venue === "string" && venue ? venue : null;
+  const sports = (await activeSports(db)).filter((s) => (!key || sportKey(s.name) === key) && (!place || s.venue_id === place));
   const from = dates[0]!, to = dates[dates.length - 1]!;
   const out = new Set<string>();
   for (const s of sports) {
@@ -438,10 +481,11 @@ export async function openOverview(
   now: LocalNow,
   sport?: unknown,
   mode: CourtMode = "reserva",
+  venue?: unknown,
 ): Promise<BlockSummary[]> {
   const days = Array.from({ length: OVERVIEW_DAYS }, (_, i) => addDays(now.date, i));
-  const rows = await openRows(db, days[0]!, days[days.length - 1]!, visitorId, now, sport);
-  const room = await halvesWithRoom(db, days, now, sport, mode);
+  const rows = await openRows(db, days[0]!, days[days.length - 1]!, visitorId, now, sport, venue);
+  const room = await halvesWithRoom(db, days, now, sport, mode, venue);
   return days.map((date) => {
     const mine = rows.filter((g) => g.date === date);
     return {
@@ -462,10 +506,11 @@ export async function listOpenBlock(
   visitorId: string | Who,
   now: LocalNow,
   sport?: unknown,
+  venue?: unknown,
 ): Promise<OpenGame[] | null> {
   if (!isDate(date) || (half !== "am" && half !== "pm")) return null;
   if (date < now.date || date > addDays(now.date, OVERVIEW_DAYS - 1)) return null;
-  const rows = (await openRows(db, date, date, visitorId, now, sport)).filter((g) => halfOf(g.time) === half);
+  const rows = (await openRows(db, date, date, visitorId, now, sport, venue)).filter((g) => halfOf(g.time) === half);
   if (rows.length === 0) return [];
   const { results: players } = await db
     .prepare(`SELECT game_id, initials, level, rama, intent FROM players WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`)

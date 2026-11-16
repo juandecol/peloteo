@@ -391,7 +391,7 @@ html[lang="en"] .day8.today .dl{font-size:.58rem;letter-spacing:0}
 
 /* Selector de deporte dentro de "¿Buscas con quién jugar?" (fondo pelota):
    siempre claro, en modo claro y oscuro, como el resto del bloque. */
-.week .picker{display:flex;align-items:center;gap:.6rem;margin:.2rem 0 .7rem}
+.week .picker{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:.5rem .6rem;margin:.2rem 0 .7rem}
 .week .picker label.f{margin:0;color:var(--ball-ink);flex:none;font-size:1rem;font-weight:700}
 .week .picker select{flex:1;min-width:0;margin:0}
 .week select{background:#FFFFFF;color:#14251D;border-color:rgba(20,37,29,.35);color-scheme:light}

@@ -489,3 +489,50 @@ test("términos y condiciones: obligatorios al abrir y al unirse; se guarda la v
   assert.equal((await b.req("POST", `/api/games/${g.id}/join`, { player: player("RS") })).status, 200);
   assert.equal(w.db.count("SELECT count(*) AS n FROM players WHERE terms_accepted = '2026-11-16'"), 2);
 });
+
+test("lugares del deporte: siguen el orden del administrador y luego el alfabético (2026-11-16)", async () => {
+  const w = world();
+  const b = w.browser();
+  const names = async () => ((await b.req("GET", "/api/venues?sport=tenis")).json as any[]).map((o) => o.venue.id);
+  assert.deepEqual(await names(), ["L-AR002", "L-SM001"]); // alfabético con el mismo número
+  w.db.exec("UPDATE venues SET sort_order = 3 WHERE id = 'L-AR002'");
+  assert.deepEqual(await names(), ["L-SM001", "L-AR002"]);
+});
+
+test("inicio: con ?venue= el resumen y la lista de un bloque son solo de ese lugar (2026-11-16)", async () => {
+  const w = world();
+  await w.browser().req("POST", "/api/games", openTenis("MT")); // Santa Martina, martes 18:00
+  await w.browser().req("POST", "/api/games", { ...openTenis("PD"), sport_id: "D-TEN02" }); // Los Aromos, martes 18:00
+  const b = w.browser();
+  assert.equal((await b.req("GET", "/api/open?sport=tenis")).json[1].pm, 2);
+  assert.equal((await b.req("GET", "/api/open?sport=tenis&venue=L-AR002")).json[1].pm, 1);
+  const list = (await b.req("GET", `/api/open/block?date=${DAY}&half=pm&sport=tenis&venue=L-SM001`)).json;
+  assert.deepEqual(list.map((g: any) => g.venue.id), ["L-SM001"]);
+  // Las horas libres también son solo de ese lugar: Los Aromos cerrado el martes deja el día gris.
+  w.db.exec("UPDATE venues SET hours = '08:00-22:00;08:00-22:00;;08:00-22:00;08:00-22:00;08:00-22:00;08:00-22:00' WHERE id = 'L-AR002'");
+  w.db.exec("DELETE FROM players WHERE initials = 'PD'; DELETE FROM games WHERE sport_id = 'D-TEN02'");
+  assert.deepEqual((await b.req("GET", "/api/open?sport=tenis&venue=L-AR002")).json[1], { date: DAY, am: 0, pm: 0, am_room: false, pm_room: false });
+  assert.equal((await b.req("GET", "/api/open?sport=tenis&venue=L-SM001")).json[1].pm_room, true);
+});
+
+test("lugares disponibles: solo visibles y con deportes; en el orden del administrador; el oculto no admite partidos nuevos (2026-11-16)", async () => {
+  const w = world();
+  const b = w.browser();
+  const places = async () => ((await b.req("GET", "/api/places")).json as any[]);
+  assert.deepEqual((await places()).map((p) => p.id), ["L-AR002", "L-SM001"]); // mismo número: alfabético
+  assert.deepEqual((await places()).find((p) => p.id === "L-SM001").sports.map((s: any) => s.key), ["padel", "tenis"]);
+  w.db.exec("UPDATE venues SET sort_order = 2 WHERE id = 'L-AR002'");
+  w.db.exec("UPDATE sports SET sort_order = 1 WHERE id = 'D-PAD01'");
+  assert.deepEqual((await places()).map((p) => p.id), ["L-SM001", "L-AR002"]);
+  assert.deepEqual((await places())[0].sports.map((s: any) => s.key), ["tenis", "padel"]);
+
+  // Un partido abierto antes de ocultar el lugar sigue su curso.
+  const g = (await b.req("POST", "/api/games", openTenis("MT"))).json.game;
+  w.db.exec("UPDATE venues SET visible = 0 WHERE id = 'L-SM001'");
+  assert.deepEqual((await places()).map((p) => p.id), ["L-AR002"]);
+  assert.deepEqual(((await b.req("GET", "/api/venues?sport=tenis")).json as any[]).map((o) => o.venue.id), ["L-AR002"]);
+  assert.equal(((await b.req("GET", "/api/sports")).json as any[]).some((s) => s.key === "padel"), false);
+  const no = await w.browser().req("POST", "/api/games", { ...openTenis("RS"), time: "19:00" });
+  assert.equal(no.status, 404);
+  assert.equal((await w.browser().req("POST", `/api/games/${g.id}/join`, { player: player("RS") })).status, 200);
+});

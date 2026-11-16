@@ -74,3 +74,10 @@ test("migración 0014: lugares sin horario propio, canchas sin horas desactivada
   assert.equal(db.count("SELECT count(*) AS n FROM courts WHERE disabled_slots <> ''"), 0);
   assert.equal(db.count("SELECT count(*) AS n FROM players WHERE terms_accepted IS NOT NULL"), 0);
 });
+
+test("migración 0015: los lugares parten en orden 0 (entre 0 y 999) y visibles", () => {
+  assert.equal(new TestDb().count("SELECT count(*) AS n FROM venues WHERE visible <> 1"), 0);
+  const db = new TestDb();
+  assert.equal(db.count("SELECT count(*) AS n FROM venues WHERE sort_order <> 0"), 0);
+  assert.throws(() => db.exec("UPDATE venues SET sort_order = 1000 WHERE id = 'L-SM001'"), /CHECK constraint failed/);
+});

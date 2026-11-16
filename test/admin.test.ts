@@ -775,3 +775,34 @@ test("canchas: desactivar la hora de un encuentro confirmado se bloquea", async 
   assert.deepEqual(r.json.games.map((x: any) => x.id), [g.game.id]);
   assert.equal((await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, disabled_slots: ["2@19:00"] })).status, 200);
 });
+
+test("lugares: orden en el selector; menor primero y, con el mismo número, alfabético (2026-11-16)", async () => {
+  const t = await ready();
+  const names = async () => ((await t.req("GET", "/admin/api/venues")).json as { name: string }[]).map((v) => v.name);
+  assert.deepEqual(await names(), ["Club Los Aromos (ejemplo)", "Country Club Santa Martina"]);
+  const r = await t.req("PUT", "/admin/api/venues/L-SM001", { name: "Country Club Santa Martina", sort_order: 1 });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.sort_order, 1);
+  assert.equal((await t.req("PUT", "/admin/api/venues/L-AR002", { name: "Club Los Aromos (ejemplo)", sort_order: 5 })).status, 200);
+  assert.deepEqual(await names(), ["Country Club Santa Martina", "Club Los Aromos (ejemplo)"]);
+  // Sin el campo, el orden no cambia; fuera de rango o no entero, error.
+  assert.equal((await t.req("PUT", "/admin/api/venues/L-AR002", { name: "Club Los Aromos (ejemplo)" })).json.sort_order, 5);
+  for (const bad of [-1, 1000, 2.5, "x"]) {
+    const e = await t.req("PUT", "/admin/api/venues/L-AR002", { name: "Club Los Aromos (ejemplo)", sort_order: bad });
+    assert.equal(e.status, 400, String(bad));
+    assert.equal(e.json.field, "sort_order");
+  }
+  // Un lugar nuevo parte en 0.
+  assert.equal((await t.req("POST", "/admin/api/venues", { name: "Club Nuevo" })).json.sort_order, 0);
+});
+
+test("lugares: visible para los jugadores; se crea oculto y se publica después (2026-11-16)", async () => {
+  const t = await ready();
+  const a = await t.req("POST", "/admin/api/venues", { name: "Club Futuro", visible: false });
+  assert.equal(a.status, 201, JSON.stringify(a.json));
+  assert.equal(a.json.visible, false);
+  assert.equal((await t.req("POST", "/admin/api/venues", { name: "Club Otro" })).json.visible, true); // por defecto, visible
+  // Sin el campo, no cambia; con el campo, se publica.
+  assert.equal((await t.req("PUT", `/admin/api/venues/${a.json.id}`, { name: "Club Futuro" })).json.visible, false);
+  assert.equal((await t.req("PUT", `/admin/api/venues/${a.json.id}`, { name: "Club Futuro", visible: true })).json.visible, true);
+});
