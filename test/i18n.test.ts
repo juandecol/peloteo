@@ -87,6 +87,7 @@ const player = (initials: string, extra: Record<string, unknown> = {}) => ({
   email: initials.toLowerCase() + "@example.com",
   rama: "femenina",
   intent: "salud",
+  terms: true,
   ...extra,
 });
 const openTenis = (initials: string, extra: Record<string, unknown> = {}) => ({

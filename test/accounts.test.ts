@@ -49,7 +49,7 @@ function world(enabled = true, db: TestDb = emptyGamesDb()) {
   return { db, mails, browser, linkToken, at: (iso: string) => (now = new Date(iso)), advance: (min: number) => (now = new Date(now.getTime() + min * 60_000)) };
 }
 
-const player = (initials: string, email = initials.toLowerCase() + "@example.com") => ({ initials, level: 3, email, rama: "masculina", intent: "diversion" });
+const player = (initials: string, email = initials.toLowerCase() + "@example.com") => ({ initials, level: 3, email, rama: "masculina", intent: "diversion", terms: true });
 const openTenis = (initials: string, email?: string) => ({
   sport_id: "D-TEN01",
   capacity: 2, // tenis admite singles (2) o dobles (4): migración 0008

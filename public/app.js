@@ -135,7 +135,7 @@
   // ---------------- navegación ----------------
   async function go(view, opts) {
     S.view = view; S.err = ''; S.field = ''; S.confirm = null;
-    if (view === 'form') S.accepted = null; // un formulario nuevo parte sin niveles marcados
+    if (view === 'form') { S.accepted = null; S.terms = false; } // un formulario nuevo parte sin niveles ni términos marcados
     if (!opts || !opts.keepScroll) window.scrollTo(0, 0);
     render();
     if (view === 'home') { S.preset = null; S.sports = (await get('/api/sports')) || []; await loadOpen(); }
@@ -241,17 +241,21 @@
 
   // Calendario horizontal de 8 días (hoy incluido): un bloque AM y uno PM por día.
   // Naranja si hay partidos que buscan jugadores en esa mitad del día; blanco si no.
+  // Gris (2026-11-16) si no hay partidos y no queda hora para crear uno (los lugares no
+  // abren, ya pasó o se alcanzó el máximo de partidos confirmados): no se puede elegir.
   function vWeek() {
     const days = S.open || [];
     const cell = (d, half) => {
       const n = d[half];
-      const label = cap(fecha(d.date)) + ', ' + HALF(half) + ': ' + (n ? (n === 1 ? L('1 partido busca jugadores', '1 match looking for players') : n + L(' partidos buscan jugadores', ' matches looking for players')) : L('nadie busca jugadores todavía', 'nobody is looking for players yet'));
-      return '<button type="button" class="blk ' + half + (n ? ' on' : '') + '" data-a="block" data-d="' + d.date + '" data-h="' + half + '" aria-label="' + label + '">' + half.toUpperCase() + '</button>';
+      const none = !n && d[half + '_room'] === false;
+      const label = cap(fecha(d.date)) + ', ' + HALF(half) + ': ' + (n ? (n === 1 ? L('1 partido busca jugadores', '1 match looking for players') : n + L(' partidos buscan jugadores', ' matches looking for players'))
+        : none ? L('sin horas disponibles', 'no times available') : L('nadie busca jugadores todavía', 'nobody is looking for players yet'));
+      return '<button type="button" class="blk ' + half + (n ? ' on' : none ? ' none' : '') + '"' + (none ? ' disabled' : ' data-a="block" data-d="' + d.date + '" data-h="' + half + '"') + ' aria-label="' + label + '">' + half.toUpperCase() + '</button>';
     };
     return '<section class="cta week" aria-labelledby="buscas"><h2 id="buscas">' + L('¿Buscas con quién jugar?', 'Looking for someone to play with?') + '</h2>' +
       '<div class="picker">' + sportSelect() + '</div>' +
-      '<p>' + L('Toca un bloque: si está <b class="dot"></b> naranjo, hay partidos esperando jugadores. En cualquier bloque también puedes crear tu propio partido.',
-        "Tap a block: if it's <b class=\"dot\"></b> orange, there are matches waiting for players. From any block you can also create your own match.") + '</p>' +
+      '<p>' + L('Toca un bloque: si está <b class="dot"></b> naranjo, hay partidos esperando jugadores. En cualquier bloque también puedes crear tu propio partido. Los grises no tienen horas disponibles.',
+        "Tap a block: if it's <b class=\"dot\"></b> orange, there are matches waiting for players. From any block you can also create your own match. Grey ones have no times available.") + '</p>' +
       (days.length ? '<div class="days8">' + days.map((d) => {
         const t = parse(d.date);
         return '<div class="day8' + (d.date === S.today.date ? ' today' : '') + '"><span class="dl" aria-hidden="true">' + (d.date === S.today.date ? L('hoy', 'today') : diaCorto(d.date)) + '</span><span class="dn" aria-hidden="true">' + t.getDate() + '</span><span class="pair">' + cell(d, 'am') + cell(d, 'pm') + '</span></div>';
@@ -390,8 +394,11 @@
       (waField() && WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>' + L('Avísenme también por WhatsApp', 'Also notify me on WhatsApp') + '</label></div>' : '') +
       '<p class="small muted">' + L('Tu contacto solo se comparte con quienes jueguen contigo, cuando el partido se confirme.', 'Your contact details are only shared with the people playing with you, once the match is confirmed.') + '</p>' +
       (lang === 'en' ? '<p class="small muted">We\'ll email you in English.</p>' : '') + '</section>' +
+      // Términos y condiciones (2026-11-16): obligatorio; el botón se activa solo al marcarla.
+      '<label class="terms"><input type="checkbox" name="terms" value="1"' + (S.terms ? ' checked' : '') + '><span>' +
+        L('Acepto los <a href="#terminos" target="_blank" rel="noopener">términos y condiciones</a>', 'I accept the <a href="#terminos" target="_blank" rel="noopener">terms and conditions</a>') + req() + '</span></label>' +
       '<p class="small muted req-note"><span class="req" aria-hidden="true">*</span> ' + L('Indica un campo obligatorio.', 'Marks a required field.') + '</p>' +
-      errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? L('Enviando…', 'Sending…') : g ? L('Unirme al partido', 'Join the match') : L('Publicar partido', 'Post match')) + '</button></div></form>';
+      errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy || !S.terms ? ' disabled' : '') + '>' + (S.busy ? L('Enviando…', 'Sending…') : g ? L('Unirme al partido', 'Join the match') : L('Publicar partido', 'Post match')) + '</button></div></form>';
     return h;
   }
 
@@ -544,6 +551,7 @@
     if (m) { openToken(m[1]); return true; }
     if (h === '#mis-partidos') { go('mine'); return true; }
     if (h === '#privacidad') { go('privacy'); return true; }
+    if (h === '#terminos') { go('terms'); return true; }
     return false;
   }
 
@@ -565,7 +573,7 @@
         L('<b>Iniciales, rama (masculina o femenina), intención de juego y nivel</b>, para mostrar quién juega en cada partido.', "<b>Initials, division (men's or women's), why you play and playing level</b>, to show who plays in each match."),
         L('<b>Email</b>, para enviarte los avisos de tus partidos.', '<b>Email</b>, to send you notices about your matches.'),
         L('<b>WhatsApp</b> (opcional, solo si el sitio lo pide), para que tus compañeros puedan escribirte.', '<b>WhatsApp</b> (optional, only if the site asks for it), so your partners can message you.'),
-        L('Los partidos en que te anotas: deporte, lugar, día, hora y niveles que buscas.', 'The matches you sign up for: sport, venue, day, time and the levels you are looking for.'),
+        L('Los partidos en que te anotas: deporte, lugar, día, hora y niveles que buscas, y la versión de los <a href="#terminos" data-a="go" data-v="terms">términos y condiciones</a> que aceptaste.', 'The matches you sign up for: sport, venue, day, time, the levels you are looking for, and the version of the <a href="#terminos" data-a="go" data-v="terms">terms and conditions</a> you accepted.'),
       ]) + '<p>' + L('No pedimos tu nombre, contraseña, dirección ni datos de pago.', "We don't ask for your name, a password, your address or payment details.") + '</p>') +
       sec(L('Quién ve tus datos', 'Who sees your data'), ul([
         L('<b>Cualquier visitante</b> ve solo tus iniciales, tu rama, tu intención de juego y tu nivel en los partidos abiertos.', '<b>Any visitor</b> only sees your initials, division, why you play and level in open matches.'),
@@ -596,10 +604,61 @@
       '<p>' + L('¿Dudas? Escríbenos a ', 'Questions? Write to us at ') + mail + '.</p></article>';
   }
 
-  // Pie de página: peloteo.cl, año en curso y enlace a las Políticas de Privacidad.
+
+  // ---------------- Términos y condiciones (2026-11-16) ----------------
+  // Página del sitio (#terminos), en español e inglés. Redactados de acuerdo con la ley
+  // chilena (Ley 19.496 del consumidor y Ley 20.609 contra la discriminación); no
+  // reemplazan una revisión legal. Si cambian, actualizar TERMS_UPDATED y TERMS_VERSION
+  // en src/lib/matching.ts: cada cupo guarda la versión que aceptó.
+  const TERMS_UPDATED = { es: '16 de noviembre de 2026', en: 'November 16, 2026' };
+  function vTerms() {
+    const mail = '<a href="mailto:' + PRIVACY_CONTACT + '">' + PRIVACY_CONTACT + '</a>';
+    const sec = (n, title, body) => '<h2>' + n + '. ' + title + '</h2>' + body;
+    const p = (es, en) => '<p>' + L(es, en) + '</p>';
+    return '<article class="legal"><p class="crumbs"><button type="button" data-a="go" data-v="home">‹ ' + L('Inicio', 'Home') + '</button></p>' +
+      '<h1 class="h">' + L('Términos y condiciones', 'Terms and conditions') + '</h1>' +
+      '<p class="small muted">' + L('Última actualización: ' + TERMS_UPDATED.es, 'Last updated: ' + TERMS_UPDATED.en) + '</p>' +
+      sec(1, L('Qué es Peloteo y cómo se aceptan estos términos', 'What Peloteo is and how you accept these terms'),
+        p('Peloteo (peloteo.cl) es un servicio gratuito que ayuda a los jugadores a ponerse de acuerdo en un deporte, un lugar, un día y una hora para jugar. Al crear un partido o sumarte a uno, aceptas estos términos y condiciones y nuestras <a href="#privacidad" data-a="go" data-v="privacy">Políticas de Privacidad</a>. Si no estás de acuerdo, no uses el servicio.',
+          'Peloteo (peloteo.cl) is a free service that helps players agree on a sport, a venue, a day and a time to play. By creating a match or joining one, you accept these terms and conditions and our <a href="#privacidad" data-a="go" data-v="privacy">Privacy Policy</a>. If you do not agree, do not use the service.') +
+        p('Si eres menor de edad, usa Peloteo con la autorización de tu padre, madre o tutor.', 'If you are a minor, use Peloteo with the permission of your parent or guardian.')) +
+      sec(2, L('Peloteo solo agenda el encuentro', 'Peloteo only schedules the match'),
+        p('Peloteo no reserva canchas ni administra los lugares de juego. Los lugares, días, horarios y canchas que muestra el sitio son solo referenciales. Reservar la cancha con el lugar y cumplir sus reglas es responsabilidad de los jugadores.',
+          'Peloteo does not book courts or run the venues. The venues, days, times and courts shown on the site are for reference only. Booking the court with the venue and following its rules is the players\' responsibility.') +
+        p('Peloteo no se hace responsable del agendamiento de las canchas ni de las decisiones que adopten los lugares en que se acuerdan los partidos (por ejemplo, cerrar, cambiar sus horarios o no aceptar una reserva), ni de que los jugadores encuentren dónde jugar.',
+          'Peloteo is not responsible for booking courts or for the decisions made by the venues where matches are arranged (for example, closing, changing their hours or refusing a booking), nor for players finding a place to play.')) +
+      sec(3, L('Tus datos de contacto se comparten con quienes juegan contigo', 'Your contact details are shared with the people you play with'),
+        p('Al anotarte en un partido aceptas que, cuando se confirme, la dirección de correo que ingresaste (y tu WhatsApp, si lo diste) se comparta por correo electrónico y en el sitio con las personas que acepten jugar ese partido contigo, para que se pongan de acuerdo. Antes de la confirmación, los demás solo ven tus iniciales, tu rama, tu intención de juego y tu nivel.',
+          'By signing up for a match you agree that, once it is confirmed, the email address you entered (and your WhatsApp, if you gave it) will be shared by email and on the site with the people who agree to play that match with you, so you can get in touch. Before confirmation, others only see your initials, division, why you play and level.') +
+        p('Peloteo no se hace responsable, en la medida que la ley lo permita, de daños materiales o morales producto del uso que otras personas hagan de esa información, ni de los actos u omisiones de cualquiera de las personas involucradas en un partido, dentro o fuera de la cancha. Peloteo no es parte de los acuerdos entre jugadores. Cada jugador es responsable de su conducta, de su seguridad y de estar en condiciones de jugar.',
+          'To the extent permitted by law, Peloteo is not liable for material or moral damages resulting from how other people use that information, nor for the acts or omissions of anyone involved in a match, on or off the court. Peloteo is not a party to agreements between players. Each player is responsible for their own conduct, safety and fitness to play.')) +
+      sec(4, L('Sin vetos ni discriminación', 'No bans and no discrimination'),
+        p('Peloteo no verifica la identidad, la edad, el nivel, la condición física ni la conducta de los jugadores, y no respalda ni garantiza sus características físicas o morales. Peloteo no veta usuarios ni discrimina por ningún motivo, incluidos todos los que establece la ley (Ley N° 20.609), como raza o etnia, nacionalidad, situación socioeconómica, idioma, ideología u opinión política, religión o creencia, sindicación, sexo, orientación sexual, identidad o expresión de género, estado civil, edad, filiación, apariencia personal, enfermedad o discapacidad.',
+          'Peloteo does not verify players\' identity, age, level, fitness or conduct, and does not endorse or guarantee their physical or moral characteristics. Peloteo does not ban users or discriminate on any ground, including all those set out in Chilean law (Law No. 20,609), such as race or ethnicity, nationality, socioeconomic status, language, political ideology or opinion, religion or belief, union membership, sex, sexual orientation, gender identity or expression, marital status, age, parentage, personal appearance, illness or disability.') +
+        p('La rama y la intención de juego son informativas: no limitan quién puede sumarse. Los niveles que aceptas al crear un partido los eliges tú.',
+          'Division and reason for playing are for information only: they do not limit who can join. The levels you accept when creating a match are your own choice.')) +
+      sec(5, L('Uso adecuado', 'Proper use'),
+        p('Usa datos verdaderos y un correo propio. No publiques partidos falsos ni uses Peloteo para enviar publicidad, molestar a otras personas o cualquier fin contrario a la ley. Peloteo puede eliminar partidos o cupos que no cumplan estos términos.',
+          'Use accurate details and your own email address. Do not post fake matches or use Peloteo to send advertising, harass other people or for any unlawful purpose. Peloteo may remove matches or spots that breach these terms.')) +
+      sec(6, L('Disponibilidad del servicio', 'Availability of the service'),
+        p('Peloteo es gratuito y se ofrece tal como está. Peloteo se reserva el derecho de modificar, suspender o interrumpir el servicio, total o parcialmente, cuando sea necesario: por mantención, por razones técnicas o de seguridad, por un uso contrario a estos términos o a la ley, o por decisiones sobre la continuidad del servicio. Cuando sea posible, lo avisará en el sitio. Peloteo no garantiza que el servicio esté siempre disponible ni libre de errores y, en la medida que la ley lo permita, no responde por los daños o costos que esas interrupciones causen.',
+          'Peloteo is free and provided as is. Peloteo reserves the right to modify, suspend or interrupt the service, in whole or in part, when necessary: for maintenance, for technical or security reasons, because of use contrary to these terms or the law, or due to decisions about the continuity of the service. Whenever possible, it will give notice on the site. Peloteo does not guarantee that the service will always be available or error-free and, to the extent permitted by law, is not liable for damages or costs caused by such interruptions.')) +
+      sec(7, L('Ley aplicable y controversias', 'Governing law and disputes'),
+        p('Estos términos se rigen por las leyes de la República de Chile. Cualquier controversia se intentará resolver primero de buena fe, escribiéndonos a ' + mail + '. Si no se resuelve, las partes podrán acordar someterla a arbitraje; a falta de ese acuerdo, quedará sujeta a la competencia de los tribunales ordinarios de justicia de Santiago de Chile.',
+          'These terms are governed by the laws of the Republic of Chile. Any dispute will first be addressed in good faith by writing to us at ' + mail + '. If it is not resolved, the parties may agree to submit it to arbitration; failing such agreement, it will be subject to the jurisdiction of the ordinary courts of Santiago, Chile.') +
+        p('Nada de lo anterior limita los derechos que te reconoce la Ley N° 19.496 sobre Protección de los Derechos de los Consumidores, incluido acudir al tribunal competente o al SERNAC.',
+          'Nothing above limits your rights under Chilean Consumer Protection Law No. 19,496, including going to the competent court or to SERNAC.')) +
+      sec(8, L('Cambios a estos términos', 'Changes to these terms'),
+        p('Si cambiamos estos términos, publicaremos la nueva versión en esta página con su fecha. Cada partido se rige por la versión que aceptaste al anotarte; para los siguientes se te pedirá aceptar la vigente.',
+          'If we change these terms, we will post the new version on this page with its date. Each match is governed by the version you accepted when signing up; for later matches you will be asked to accept the current one.')) +
+      '<p>' + L('¿Dudas? Escríbenos a ', 'Questions? Write to us at ') + mail + '.</p></article>';
+  }
+
+  // Pie de página: peloteo.cl, año en curso y enlaces a los Términos y a las Políticas de Privacidad.
   function footer() {
     const year = S.today ? S.today.date.slice(0, 4) : String(new Date().getFullYear());
-    return '<span>peloteo.cl ' + year + '</span><a href="#privacidad" data-a="go" data-v="privacy">' + L('Políticas de Privacidad', 'Privacy Policy') + '</a>';
+    return '<span>peloteo.cl ' + year + '</span><a href="#terminos" data-a="go" data-v="terms">' + L('Términos y condiciones', 'Terms and conditions') + '</a>' +
+      '<a href="#privacidad" data-a="go" data-v="privacy">' + L('Políticas de Privacidad', 'Privacy Policy') + '</a>';
   }
 
   function view() {
@@ -614,6 +673,7 @@
       case 'block': return vBlock();
       case 'token': return vToken();
       case 'privacy': return vPrivacy();
+      case 'terms': return vTerms();
       default: return vHome();
     }
   }
@@ -658,7 +718,7 @@
     const out = {};
     for (const el of form.elements) {
       if (!el.name) continue;
-      if (el.type === 'checkbox') { if (el.name === 'whatsapp_opt_in') out[el.name] = el.checked; else { (out[el.name] = out[el.name] || []); if (el.checked) out[el.name].push(Number(el.value)); } }
+      if (el.type === 'checkbox') { if (el.name === 'whatsapp_opt_in' || el.name === 'terms') out[el.name] = el.checked; else { (out[el.name] = out[el.name] || []); if (el.checked) out[el.name].push(Number(el.value)); } }
       else if (el.type === 'radio') { if (el.checked) out[el.name] = el.value; }
       else out[el.name] = el.value;
     }
@@ -675,11 +735,12 @@
       : !d.intent ? L('Elige por qué juegas: diversión, salud o competitivo.', 'Choose why you play: fun, health or competitive.')
       : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((d.email || '').trim()) ? L('Revisa el email: lo usamos para avisarte.', 'Check your email address: we use it to keep you posted.')
       : (d.whatsapp && d.whatsapp.replace(/\D/g, '').length < 8) ? L('Revisa el número de WhatsApp o déjalo en blanco.', 'Check the WhatsApp number or leave it blank.')
-      : (!S.game && !(d.accepted_levels || []).length) ? L('Elige al menos un nivel de jugador.', 'Choose at least one player level.') : '';
+      : (!S.game && !(d.accepted_levels || []).length) ? L('Elige al menos un nivel de jugador.', 'Choose at least one player level.')
+      : !d.terms ? L('Acepta los términos y condiciones para continuar.', 'Accept the terms and conditions to continue.') : '';
     // Los niveles marcados se conservan si el formulario se vuelve a dibujar con un error.
     if (!S.game) S.accepted = (d.accepted_levels || []).map(Number);
     if (S.err) {
-      S.field = S.field || (/nivel de jugador|player level/.test(S.err) ? 'accepted_levels' : /rama|division/.test(S.err) ? 'rama' : /por qué juegas|why you play/.test(S.err) ? 'intent' : '');
+      S.field = S.field || (/nivel de jugador|player level/.test(S.err) ? 'accepted_levels' : /rama|division/.test(S.err) ? 'rama' : /por qué juegas|why you play/.test(S.err) ? 'intent' : /términos|terms/.test(S.err) ? 'terms' : '');
       render(); return;
     }
 
@@ -688,7 +749,7 @@
     prefs[key] = level;
     LS.set('peloteo_prefs', prefs);
 
-    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in, lang, rama: d.rama, intent: d.intent };
+    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in, lang, rama: d.rama, intent: d.intent, terms: !!d.terms };
     S.busy = true; S.err = ''; render();
     const r = S.game
       ? await api('POST', '/api/games/' + encodeURIComponent(S.game.id) + '/join', { player })
@@ -933,6 +994,13 @@
   });
   document.addEventListener('change', async (e) => {
     const el = e.target;
+    // Casilla de términos: activa o desactiva el botón de enviar sin volver a dibujar el formulario.
+    if (el.name === 'terms' && el.form) {
+      S.terms = el.checked;
+      const btn = el.form.querySelector('button[type=submit]');
+      if (btn && !S.busy) btn.disabled = !el.checked;
+      return;
+    }
     if (el.dataset && el.dataset.home === 'sport') {
       rememberSport(el.value); S.open = null; render(); await loadOpen(); render();
       const sel = document.getElementById('sp-home'); if (sel) sel.focus();

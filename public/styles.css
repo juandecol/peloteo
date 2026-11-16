@@ -445,3 +445,26 @@ legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
   :root:not([data-theme="light"]) .step{background:rgb(238 171 98 / .2);border-color:rgb(238 171 98 / .5)}
 }
 :root[data-theme="dark"] .step{background:rgb(238 171 98 / .2);border-color:rgb(238 171 98 / .5)}
+
+/* Bloque del inicio sin horas disponibles (2026-11-16): gris y no se puede elegir. */
+.blk.none{background:#A9B3AD;border-color:#A9B3AD;color:#46524B;cursor:not-allowed}
+/* Casilla de términos y condiciones del formulario de partido (2026-11-16). */
+.terms{display:flex;gap:.6rem;align-items:flex-start;margin:1.2rem 0 .3rem;font-weight:600;cursor:pointer}
+.terms input{width:1.3rem;height:1.3rem;accent-color:var(--court);flex:none;margin:.1rem 0 0}
+.terms a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+
+/* Admin: horario semanal del lugar y grilla de horas de cada cancha (2026-11-16). */
+.hours .hrow{display:grid;grid-template-columns:minmax(6.5rem,auto) 1fr auto 1fr;gap:.45rem;align-items:center;margin-top:.45rem}
+.hours .hday{display:flex;gap:.45rem;align-items:center;font-weight:700;font-size:.9rem}
+.hours .hday input{width:1.2rem;height:1.2rem;accent-color:var(--court);flex:none;margin:0}
+.hours input[type=time]:disabled{opacity:.4}
+.slotgrid .srow{display:flex;gap:.5rem;align-items:flex-start;margin-top:.5rem}
+.slotgrid .sday{flex:none;width:1.8rem;font-weight:800;padding-top:.35rem}
+.slotgrid .chips{display:flex;flex-wrap:wrap;gap:.3rem}
+.chip{position:relative;border:1.5px solid var(--line);border-radius:8px;padding:.3rem .45rem;font-size:.8rem;font-weight:700;font-variant-numeric:tabular-nums;background:var(--surface);color:var(--muted);text-decoration:line-through}
+.chip:has(input:checked){background:var(--court);border-color:var(--court);color:var(--court-ink);text-decoration:none}
+.chip input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.chip:has(input:focus-visible){outline:3px solid var(--ball);outline-offset:2px}
+.chip.closed{opacity:.45;border-style:dashed}
+/* Botón de enviar inactivo (por ejemplo, sin aceptar los términos): se nota apagado. */
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}

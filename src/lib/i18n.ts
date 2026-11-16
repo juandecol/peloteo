@@ -55,6 +55,7 @@ export const ERRORS_EN: Record<string, string> = {
   "Elige tu nivel de juego.": "Choose your playing level.",
   "Elige tu rama: masculina o femenina.": "Choose your division: men's or women's.",
   "Elige por qué juegas: diversión, salud o competitivo.": "Choose why you play: fun, health or competitive.",
+  "Acepta los términos y condiciones para continuar.": "Accept the terms and conditions to continue.",
   "Revisa el email: lo usamos para avisarte.": "Check your email address: we use it to keep you posted.",
   "Revisa el número de WhatsApp o déjalo en blanco.": "Check the WhatsApp number or leave it blank.",
   "Elige cuántos jugadores serán.": "Choose how many players there will be.",

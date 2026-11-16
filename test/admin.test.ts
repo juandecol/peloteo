@@ -400,7 +400,7 @@ test("configuración: un deporte se muestra a los jugadores solo si está visibl
   assert.ok(!(await names()).includes("Squash"));
 
   // Oculto no admite partidos nuevos.
-  const player = { initials: "AB", level: 1, email: "ab@example.com", rama: "femenina", intent: "salud" };
+  const player = { initials: "AB", level: 1, email: "ab@example.com", rama: "femenina", intent: "salud", terms: true };
   await assert.rejects(
     createGame(t.db, { sport_id: s.json.id, capacity: 2, date: "2026-11-17", time: "08:00", accepted_levels: [1], player }, "V-1", t.now),
     (e: unknown) => e instanceof MatchError && e.code === "deporte_no_existe",
@@ -416,7 +416,7 @@ test("configuración: un deporte se muestra a los jugadores solo si está visibl
 // ---------------------------------------------------------------
 
 async function confirmedAt(t: ReturnType<typeof setup>, time = "18:00") {
-  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo" };
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo", terms: true };
   const a = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time, accepted_levels: [3], player }, "V-1", t.now);
   return joinGame(t.db, a.game.id, player, "V-2", t.now);
 }
@@ -453,7 +453,7 @@ test("canchas: se bloquea un cambio que deja fuera un encuentro confirmado", asy
 
 test("canchas: los encuentros abiertos (sin cancha) no bloquean cambios", async () => {
   const t = await ready();
-  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo" };
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo", terms: true };
   await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
   assert.equal((await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, status: "cerrada" })).status, 200);
 });
@@ -503,7 +503,7 @@ test("eliminar: sin encuentros futuros se elimina sin confirmación", async () =
 
 test("eliminar un lugar oculta sus deportes y canchas del público", async () => {
   const t = await ready();
-  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo" };
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo", terms: true };
   const open = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
   const first = await t.req("DELETE", "/admin/api/venues/L-SM001");
   assert.equal(first.status, 409);
@@ -552,7 +552,7 @@ test("encuentros: eliminar todos borra los partidos de todos los lugares y depor
   const sent: { event: NoticeEvent; email: string; game: string }[] = [];
   const capture: Channel = { name: "captura", async send(event, player, game) { sent.push({ event, email: player.email, game: game.id }); } };
   const t = await ready(setup(emptyGamesDb(), [capture]));
-  const p = (initials: string) => ({ initials, level: 3, email: initials.toLowerCase() + "@example.com", rama: "masculina", intent: "diversion" });
+  const p = (initials: string) => ({ initials, level: 3, email: initials.toLowerCase() + "@example.com", rama: "masculina", intent: "diversion", terms: true });
   // Uno confirmado y uno abierto (tenis), uno de pádel, uno cancelado y uno pasado.
   const conf = await confirmedAt(t);
   const open = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-18", time: "18:00", accepted_levels: [3], player: p("AB") }, "V-3", t.now);
@@ -690,4 +690,88 @@ test("opciones: pedir WhatsApp se activa y desactiva desde Configuración; requi
   // Valores inválidos se ignoran.
   assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: "si" })).json, { whatsapp_contact: true });
   assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: false })).json, { whatsapp_contact: false });
+});
+
+// ---------------------------------------------------------------
+// Horario del lugar y horas de cada cancha (2026-11-16)
+// ---------------------------------------------------------------
+
+const OPEN_ALL = Array.from({ length: 7 }, () => ["08:00", "22:00"]);
+
+test("lugares: horario semanal; valida, guarda y un cierre 00:00 es medianoche", async () => {
+  const t = await ready();
+  const put = (hours: unknown) => t.req("PUT", "/admin/api/venues/L-SM001", { name: "Country Club Santa Martina", hours });
+  for (const [hours, field] of [
+    [[["08:00", "22:00"]], "hours"], // no son 7 días
+    [OPEN_ALL.map((d, i) => (i === 2 ? ["22:00", "08:00"] : d)), "hours"], // cierre antes de apertura
+    [Array(7).fill(null), "hours"], // ningún día abre
+    [OPEN_ALL.map((d, i) => (i === 2 ? ["8", "22:00"] : d)), "hours"],
+  ] as const) {
+    const r = await put(hours);
+    assert.equal(r.status, 400, JSON.stringify(hours));
+    assert.equal(r.json.field, field);
+  }
+  const ok = await put([null, ...OPEN_ALL.slice(1, 6), ["09:00", "00:00"]]);
+  assert.equal(ok.status, 200, JSON.stringify(ok.json));
+  assert.equal(ok.json.hours, ";08:00-22:00;08:00-22:00;08:00-22:00;08:00-22:00;08:00-22:00;09:00-24:00");
+  // Sin el campo, el horario no cambia.
+  assert.equal((await t.req("PUT", "/admin/api/venues/L-SM001", { name: "Otro nombre" })).json.hours, ok.json.hours);
+  // Todos los días a toda hora equivale a no tener horario propio.
+  assert.equal((await put(Array(7).fill(["00:00", "00:00"]))).json.hours, "");
+});
+
+test("lugares: el horario limita los turnos de todas sus canchas; los días cerrados no ofrecen horas", async () => {
+  const t = await ready();
+  const hours = OPEN_ALL.map((d, i) => (i === 2 ? ["14:00", "20:00"] : i === 3 ? null : d)); // martes 14-20, miércoles cerrado
+  assert.equal((await t.req("PUT", "/admin/api/venues/L-SM001", { name: "Country Club Santa Martina", hours })).status, 200);
+  const tue = await getDayAvailability(t.db, "D-TEN01", "2026-11-17", t.now);
+  assert.deepEqual(tue.map((s) => s.time), ["14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]);
+  // Pádel (turnos de 90 min desde las 08:00): solo los que caben completos entre 14:00 y 20:00.
+  const pad = await getDayAvailability(t.db, "D-PAD01", "2026-11-17", t.now);
+  assert.deepEqual(pad.map((s) => s.time), ["14:00", "15:30", "17:00", "18:30"]);
+  assert.deepEqual(await getDayAvailability(t.db, "D-TEN01", "2026-11-18", t.now), []);
+  // Otro lugar no se ve afectado.
+  assert.equal((await getDayAvailability(t.db, "D-TEN02", "2026-11-18", t.now)).length, 13);
+  // Y no se puede abrir un partido fuera del horario.
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "diversion", terms: true };
+  await assert.rejects(
+    createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "10:00", accepted_levels: [3], player }, "V-1", t.now),
+    MatchError,
+  );
+});
+
+test("lugares: se bloquea un horario que deja fuera un encuentro confirmado", async () => {
+  const t = await ready();
+  const g = await confirmedAt(t); // martes 18:00
+  const r = await t.req("PUT", "/admin/api/venues/L-SM001", { name: "Country Club Santa Martina", hours: OPEN_ALL.map((d, i) => (i === 2 ? ["08:00", "18:00"] : d)) });
+  assert.equal(r.status, 409);
+  assert.equal(r.json.code, "afecta_encuentros");
+  assert.deepEqual(r.json.games.map((x: any) => x.id), [g.game.id]);
+  const ok = await t.req("PUT", "/admin/api/venues/L-SM001", { name: "Country Club Santa Martina", hours: OPEN_ALL.map((d, i) => (i === 2 ? ["08:00", "19:00"] : d)) });
+  assert.equal(ok.status, 200, JSON.stringify(ok.json));
+});
+
+test("canchas: horas desactivadas en la grilla semanal; se guardan solo las que la cancha genera", async () => {
+  const t = await ready();
+  const r = await t.req("PUT", "/admin/api/courts/C-T2SM2", { ...T1, name: "Cancha 2", disabled_slots: ["2@10:00", "2@11:00", "9@10:00", "2@10:30", "x", "0@22:00"] });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.disabled_slots, "2@10:00,2@11:00");
+  // Sin el campo, no cambian.
+  assert.equal((await t.req("PUT", "/admin/api/courts/C-T2SM2", { ...T1, name: "Cancha 2" })).json.disabled_slots, "2@10:00,2@11:00");
+  // El martes a las 10:00 solo queda la Cancha 1; si se desactiva también, la hora desaparece.
+  const at10 = async () => (await getDayAvailability(t.db, "D-TEN01", "2026-11-17", t.now)).find((s) => s.time === "10:00");
+  assert.equal((await at10())!.free_courts, 1);
+  await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, disabled_slots: ["2@10:00"] });
+  assert.equal(await at10(), undefined);
+  // Solo ese día de la semana: el lunes 23 a las 10:00 sigue disponible.
+  assert.ok((await getDayAvailability(t.db, "D-TEN01", "2026-11-23", t.now)).some((s) => s.time === "10:00"));
+});
+
+test("canchas: desactivar la hora de un encuentro confirmado se bloquea", async () => {
+  const t = await ready();
+  const g = await confirmedAt(t);
+  const r = await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, disabled_slots: ["2@18:00"] });
+  assert.equal(r.status, 409);
+  assert.deepEqual(r.json.games.map((x: any) => x.id), [g.game.id]);
+  assert.equal((await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, disabled_slots: ["2@19:00"] })).status, 200);
 });

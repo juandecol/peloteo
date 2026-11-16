@@ -333,7 +333,7 @@ export function adminRoutes(options: AppOptions = {}) {
   api.get("/venues", async (c) => c.json(await listVenues(c.env.DB)));
   api.post("/venues", async (c) => c.json(await createVenue(c.env.DB, await readJson(c)), 201));
   api.get("/venues/:id", async (c) => c.json(await getVenue(c.env.DB, c.req.param("id"))));
-  api.put("/venues/:id", async (c) => c.json(await updateVenue(c.env.DB, c.req.param("id"), await readJson(c))));
+  api.put("/venues/:id", async (c) => c.json(await updateVenue(c.env.DB, c.req.param("id"), await readJson(c), today(c))));
   api.delete("/venues/:id", async (c) =>
     finishDelete(c, await deleteVenue(c.env.DB, c.req.param("id"), confirmFlag(c), today(c))),
   );

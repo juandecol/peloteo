@@ -14,6 +14,7 @@ import {
   type PlayerInput,
 } from "../src/lib/matching.ts";
 import { getDayAvailability } from "../src/lib/availability.ts";
+import { TERMS_VERSION } from "../src/lib/matching.ts";
 import { emptyGamesDb, type TestDb } from "./helpers/db.ts";
 
 const now = { date: "2026-11-16", minutes: 10 * 60 }; // lunes 10:00
@@ -26,6 +27,7 @@ const me = (over: Partial<PlayerInput> = {}): PlayerInput => ({
   email: "MT@Example.com ",
   rama: "masculina",
   intent: "diversion",
+  terms: true,
   ...over,
 });
 
@@ -67,10 +69,10 @@ async function fullTenis(db: TestDb, time: string, v1: string, v2: string) {
 
 test("validación: normaliza iniciales, email y WhatsApp", () => {
   const p = validatePlayer(
-    { initials: "j.p.", level: "2", email: " JP@Mail.CL", whatsapp: "+56 9 1234 5678", whatsapp_opt_in: true, rama: "femenina", intent: "competitivo" },
+    { initials: "j.p.", level: "2", email: " JP@Mail.CL", whatsapp: "+56 9 1234 5678", whatsapp_opt_in: true, rama: "femenina", intent: "competitivo", terms: true },
     [1, 2, 3],
   );
-  assert.deepEqual(p, { initials: "JP", level: 2, email: "jp@mail.cl", whatsapp: "+56912345678", whatsapp_opt_in: 1, lang: "es", rama: "femenina", intent: "competitivo" });
+  assert.deepEqual(p, { initials: "JP", level: 2, email: "jp@mail.cl", whatsapp: "+56912345678", whatsapp_opt_in: 1, lang: "es", rama: "femenina", intent: "competitivo", terms_accepted: TERMS_VERSION });
   // Idioma de los correos: "en" si se pide; cualquier otro valor, español.
   assert.equal(validatePlayer(me({ lang: "en" }), [3]).lang, "en");
   assert.equal(validatePlayer(me({ lang: "fr" }), [3]).lang, "es");

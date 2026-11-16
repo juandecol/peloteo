@@ -246,7 +246,7 @@ export function publicRoutes(options: AppOptions = {}) {
 
   // Inicio: partidos que buscan jugadores en los próximos 8 días, por AM y PM.
   // ?sport= (nombre normalizado, como "tenis") limita al deporte elegido en el inicio.
-  app.get("/open", async (c) => c.json(await openOverview(c.env.DB, c.get("who"), today(c), c.req.query("sport"))));
+  app.get("/open", async (c) => c.json(await openOverview(c.env.DB, c.get("who"), today(c), c.req.query("sport"), mode(c))));
   app.get("/open/block", async (c) => {
     const games = await listOpenBlock(c.env.DB, c.req.query("date"), c.req.query("half"), c.get("who"), today(c), c.req.query("sport"));
     if (!games) return c.json({ error: "Elige un día de los próximos 8 y AM o PM.", code: "datos_invalidos" }, 400);

@@ -81,7 +81,16 @@ export interface PlayerInput {
   rama?: unknown;
   /** "diversion", "salud" o "competitivo" (obligatoria, informativa). */
   intent?: unknown;
+  /** true si aceptó los términos y condiciones (obligatorio desde el 2026-11-16). */
+  terms?: unknown;
 }
+
+/**
+ * Versión vigente de los términos y condiciones (su fecha de actualización). Cada cupo
+ * guarda la que aceptó (players.terms_accepted). Si cambian los términos, cambiar esta
+ * fecha y TERMS_UPDATED en public/app.js.
+ */
+export const TERMS_VERSION = "2026-11-16";
 
 export interface ValidPlayer {
   initials: string;
@@ -93,6 +102,8 @@ export interface ValidPlayer {
   lang: Lang;
   rama: Rama;
   intent: Intent;
+  /** Versión de los términos que aceptó. */
+  terms_accepted: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -140,8 +151,16 @@ export function validatePlayer(input: PlayerInput, allowedLevels: number[]): Val
   }
   const intent = input.intent as Intent;
 
+  // Términos y condiciones (2026-11-16): obligatorio al abrir y al unirse.
+  if (input.terms !== true) {
+    throw new MatchError("datos_invalidos", "Acepta los términos y condiciones para continuar.", "terms");
+  }
+
   const optIn = whatsapp !== null && (input.whatsapp_opt_in === true || input.whatsapp_opt_in === 1);
-  return { initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0, lang: asLang(input.lang), rama, intent };
+  return {
+    initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0, lang: asLang(input.lang), rama, intent,
+    terms_accepted: TERMS_VERSION,
+  };
 }
 
 /** Cantidad de jugadores elegida: debe ser una de las permitidas por el deporte. */
@@ -308,11 +327,13 @@ function insertPlayer(
   return db
     .prepare(
       `INSERT INTO players
-         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang, rama, intent)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
+         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang, rama, intent,
+          terms_accepted)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
     )
     .bind(
       id, gameId, who.visitorId, who.userId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token, p.lang, p.rama, p.intent,
+      p.terms_accepted,
       ...conditionParams,
     );
 }

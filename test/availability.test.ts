@@ -7,6 +7,7 @@ import {
   getDayAvailability,
   getMonthSummary,
   parseDays,
+  parseVenueHours,
   type Court,
   type PublicGame,
 } from "../src/lib/availability.ts";
@@ -194,4 +195,23 @@ test("resumen del mes: un día bloqueado entero queda no disponible", async () =
   assert.equal(nov.find((d) => d.date === "2026-11-21")!.available, true);
   const day = await getDayAvailability(db, "D-TEN01", "2026-11-20", now);
   assert.ok(day.every((s) => s.free_courts === 0));
+});
+
+// Horario del lugar y grilla semanal de la cancha (2026-11-16). 2026-11-17 es martes (2).
+test("horario del lugar: los turnos deben caber completos; un día vacío no abre; texto inválido = sin horario", () => {
+  const week = (tue: string) => ["08:00-22:00", "08:00-22:00", tue, "08:00-22:00", "08:00-22:00", "08:00-22:00", "08:00-22:00"].join(";");
+  assert.deepEqual(courtSlots(court({ venue_hours: week("18:00-20:30") }), "2026-11-17"), ["18:00", "19:00"]);
+  assert.deepEqual(courtSlots(court({ venue_hours: week("") }), "2026-11-17"), []);
+  assert.equal(courtSlots(court({ venue_hours: "" }), "2026-11-17").length, 13);
+  assert.equal(parseVenueHours("08:00-22:00"), null);
+  assert.equal(parseVenueHours(week("20:00-18:00")), null);
+  assert.deepEqual(parseVenueHours(week("09:00-24:00"))![2], ["09:00", "24:00"]);
+});
+
+test("grilla de la cancha: las horas desactivadas no se ofrecen, solo ese día de la semana", () => {
+  const c = court({ disabled_slots: "2@08:00,2@20:00,3@09:00" });
+  const tue = courtSlots(c, "2026-11-17");
+  assert.equal(tue.includes("08:00") || tue.includes("20:00"), false);
+  assert.equal(tue.length, 11);
+  assert.ok(courtSlots(c, "2026-11-23").includes("08:00")); // lunes
 });

@@ -67,3 +67,10 @@ test("migración 0002: borrar un encuentro sigue borrando sus jugadores en casca
   assert.equal(db.count("SELECT count(*) AS n FROM players WHERE game_id = 'E-DEMO3'"), 0);
   assert.equal(db.count("SELECT count(*) AS n FROM players"), 2);
 });
+
+test("migración 0014: lugares sin horario propio, canchas sin horas desactivadas y cupos anteriores sin términos", () => {
+  const db = new TestDb();
+  assert.equal(db.count("SELECT count(*) AS n FROM venues WHERE hours <> ''"), 0);
+  assert.equal(db.count("SELECT count(*) AS n FROM courts WHERE disabled_slots <> ''"), 0);
+  assert.equal(db.count("SELECT count(*) AS n FROM players WHERE terms_accepted IS NOT NULL"), 0);
+});

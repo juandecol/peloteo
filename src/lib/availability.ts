@@ -25,6 +25,10 @@ export interface Court {
   days: string;
   available_from: string | null;
   available_to: string | null;
+  /** Turnos semanales desactivados ("1@08:00,6@20:00"); vacío o ausente = todos activos (migración 0014). */
+  disabled_slots?: string;
+  /** Horario semanal del lugar de la cancha (ver parseVenueHours); vacío o ausente = sin horario propio. */
+  venue_hours?: string;
 }
 
 export type GameStatus = "abierto" | "sin_cancha" | "confirmado";
@@ -99,22 +103,69 @@ export function parseDays(days: string): number[] {
   return parseIntList(days, 0, 6);
 }
 
+/** Horario de un día del lugar: [apertura, cierre] o null si no abre. */
+export type DayHours = [string, string] | null;
+
+const HOURS_RE = /^([01]\d|2[0-4]):[0-5]\d-([01]\d|2[0-4]):[0-5]\d$/;
+
 /**
- * Turnos que genera una cancha en una fecha: desde la apertura, mientras el turno
- * completo termine a la hora de cierre o antes. Solo canchas operativas, en sus
- * días de operación y dentro de su rango de fechas.
+ * Horario semanal de un lugar (venues.hours, migración 0014): siete tramos separados
+ * por ";" (0 = domingo ... 6 = sábado), cada uno "HH:MM-HH:MM" o vacío si no abre.
+ * Devuelve null si el lugar no tiene horario propio (texto vacío o inválido).
  */
-export function courtSlots(court: Court, date: string): string[] {
-  if (court.status !== "operativa") return [];
-  if (court.available_from && date < court.available_from) return [];
-  if (court.available_to && date > court.available_to) return [];
-  if (!parseDays(court.days).includes(dayOfWeek(date))) return [];
+export function parseVenueHours(text: string | null | undefined): DayHours[] | null {
+  if (!text) return null;
+  const parts = text.split(";");
+  if (parts.length !== 7) return null;
+  const out: DayHours[] = [];
+  for (const p of parts) {
+    if (p === "") { out.push(null); continue; }
+    if (!HOURS_RE.test(p)) return null;
+    const [open, close] = p.split("-") as [string, string];
+    if (toMinutes(close) <= toMinutes(open) || toMinutes(close) > 24 * 60) return null;
+    out.push([open, close]);
+  }
+  return out;
+}
+
+/** Turnos semanales desactivados de una cancha ("1@08:00,6@20:00") como conjunto. */
+export function parseDisabledSlots(text: string | null | undefined): Set<string> {
+  return new Set((text ?? "").split(",").map((s) => s.trim()).filter((s) => /^[0-6]@\d\d:\d\d$/.test(s)));
+}
+
+/** Turnos semanales de una cancha según su apertura, cierre y duración (sin días ni fechas). */
+export function weeklyTimes(court: Pick<Court, "open_time" | "close_time" | "slot_minutes">): string[] {
   const step = court.slot_minutes;
   if (!(step > 0)) return [];
   const close = toMinutes(court.close_time);
   const out: string[] = [];
   for (let t = toMinutes(court.open_time); t + step <= close; t += step) out.push(fromMinutes(t));
   return out;
+}
+
+/**
+ * Turnos que genera una cancha en una fecha: desde la apertura, mientras el turno
+ * completo termine a la hora de cierre o antes. Solo canchas operativas, en sus
+ * días de operación y dentro de su rango de fechas. Además (2026-11-16), el turno
+ * completo debe caber en el horario del lugar ese día y no estar desactivado en la
+ * grilla semanal de la cancha.
+ */
+export function courtSlots(court: Court, date: string): string[] {
+  if (court.status !== "operativa") return [];
+  if (court.available_from && date < court.available_from) return [];
+  if (court.available_to && date > court.available_to) return [];
+  const dow = dayOfWeek(date);
+  if (!parseDays(court.days).includes(dow)) return [];
+  const venue = parseVenueHours(court.venue_hours);
+  const window = venue ? venue[dow] : (["00:00", "24:00"] as [string, string]);
+  if (!window) return [];
+  const [vOpen, vClose] = [toMinutes(window[0]), toMinutes(window[1])];
+  const off = parseDisabledSlots(court.disabled_slots);
+  const step = court.slot_minutes;
+  return weeklyTimes(court).filter((t) => {
+    const m = toMinutes(t);
+    return m >= vOpen && m + step <= vClose && !off.has(dow + "@" + t);
+  });
 }
 
 /** Bloqueo de una cancha en una fecha y rango de horas. */
@@ -213,13 +264,16 @@ export function monthSummary(
 // Acceso a datos
 // ---------------------------------------------------------------
 
-const COURT_COLUMNS =
-  "id, name, status, open_time, close_time, slot_minutes, days, available_from, available_to";
+const COURT_COLUMNS = `c.id, c.name, c.status, c.open_time, c.close_time, c.slot_minutes, c.days,
+  c.available_from, c.available_to, c.disabled_slots, v.hours AS venue_hours`;
 
-/** Canchas de un deporte, en el orden en que se asignan (nombre, luego ID). */
+/** Canchas de un deporte, en el orden en que se asignan (nombre, luego ID), con el horario de su lugar. */
 export async function loadCourts(db: Db, sportId: string): Promise<Court[]> {
   const { results } = await db
-    .prepare(`SELECT ${COURT_COLUMNS} FROM courts WHERE sport_id = ? AND deleted_at IS NULL ORDER BY name, id`)
+    .prepare(
+      `SELECT ${COURT_COLUMNS} FROM courts c JOIN venues v ON v.id = c.venue_id
+       WHERE c.sport_id = ? AND c.deleted_at IS NULL ORDER BY c.name, c.id`,
+    )
     .bind(sportId)
     .all<Court>();
   return results;

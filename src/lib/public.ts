@@ -5,7 +5,7 @@
 // y el WhatsApp de un jugador solo aparecen en "Mis partidos" (y en la
 // confirmación) para quienes comparten con él un encuentro confirmado.
 
-import { parseIntList } from "./availability.ts";
+import { dayAvailability, loadBlocks, loadCourts, parseIntList, type CourtMode, type PublicGame } from "./availability.ts";
 import { placeholders, type Db } from "./db.ts";
 import { asWho, isMine, ownsParams, ownsSql, type Who } from "./identity.ts";
 import { addDays, canStillCancel, isDate, isSlotOpen, type LocalNow } from "./time.ts";
@@ -336,6 +336,13 @@ export interface BlockSummary {
   /** Partidos a los que el visitante puede sumarse en la mañana y en la tarde. */
   am: number;
   pm: number;
+  /**
+   * Queda al menos una hora en que se puede crear un partido (2026-11-16): algún lugar
+   * abre, el turno no pasó y no se alcanzó el máximo de confirmados. Sin partidos que
+   * buscan jugadores y sin hora libre, el bloque se ve gris y no se puede elegir.
+   */
+  am_room: boolean;
+  pm_room: boolean;
 }
 
 export interface OpenGame {
@@ -392,13 +399,58 @@ async function openRows(db: Db, from: string, to: string, visitorId: string | Wh
   return results.filter((g) => g.n < g.capacity && isSlotOpen(g.date, g.time, now) && (!key || sportKey(g.sport_name) === key));
 }
 
-/** Resumen de los próximos 8 días (hoy incluido): cuántos partidos buscan jugadores en AM y PM. */
-export async function openOverview(db: Db, visitorId: string | Who, now: LocalNow, sport?: unknown): Promise<BlockSummary[]> {
+/**
+ * Mitades del día (por fecha) en que queda al menos una hora para crear un partido
+ * del deporte (todos sus lugares; sin `sport`, cualquier deporte activo): "fecha|am".
+ */
+async function halvesWithRoom(db: Db, dates: string[], now: LocalNow, sport: unknown, mode: CourtMode): Promise<Set<string>> {
+  const key = typeof sport === "string" && sport.trim() ? sportKey(sport) : null;
+  const sports = (await activeSports(db)).filter((s) => !key || sportKey(s.name) === key);
+  const from = dates[0]!, to = dates[dates.length - 1]!;
+  const out = new Set<string>();
+  for (const s of sports) {
+    const courts = await loadCourts(db, s.id);
+    const blocks = await loadBlocks(db, s.id, from, to);
+    // Solo los confirmados ocupan: los abiertos no cambian si queda hora libre.
+    const { results } = await db
+      .prepare(
+        `SELECT id, date, time, court_id, capacity, status FROM games
+         WHERE sport_id = ? AND date BETWEEN ? AND ? AND status = 'confirmado'`,
+      )
+      .bind(s.id, from, to)
+      .all<{ id: string; date: string; time: string; court_id: string | null; capacity: number; status: "confirmado" }>();
+    for (const date of dates) {
+      const games: PublicGame[] = results.filter((g) => g.date === date).map((g) => ({
+        ...g, accepted_levels: [], players: [], missing: 0, mine: false,
+      }));
+      for (const slot of dayAvailability(courts, games, date, now, blocks, mode)) {
+        if (slot.free_courts > 0) out.add(date + "|" + halfOf(slot.time));
+      }
+    }
+  }
+  return out;
+}
+
+/** Resumen de los próximos 8 días (hoy incluido): cuántos partidos buscan jugadores en AM y PM, y si queda hora libre. */
+export async function openOverview(
+  db: Db,
+  visitorId: string | Who,
+  now: LocalNow,
+  sport?: unknown,
+  mode: CourtMode = "reserva",
+): Promise<BlockSummary[]> {
   const days = Array.from({ length: OVERVIEW_DAYS }, (_, i) => addDays(now.date, i));
   const rows = await openRows(db, days[0]!, days[days.length - 1]!, visitorId, now, sport);
+  const room = await halvesWithRoom(db, days, now, sport, mode);
   return days.map((date) => {
     const mine = rows.filter((g) => g.date === date);
-    return { date, am: mine.filter((g) => halfOf(g.time) === "am").length, pm: mine.filter((g) => halfOf(g.time) === "pm").length };
+    return {
+      date,
+      am: mine.filter((g) => halfOf(g.time) === "am").length,
+      pm: mine.filter((g) => halfOf(g.time) === "pm").length,
+      am_room: room.has(date + "|am"),
+      pm_room: room.has(date + "|pm"),
+    };
   });
 }
 

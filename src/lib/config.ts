@@ -5,7 +5,7 @@
 // cancelados se conservan y siguen apuntando a ellos. Si hay encuentros futuros
 // afectados, se pide confirmación; al confirmar pasan a 'cancelado' y se avisa.
 
-import { blockCoversSlot, courtHasSlot, parseIntList, type Court } from "./availability.ts";
+import { blockCoversSlot, courtHasSlot, parseIntList, weeklyTimes, type Court } from "./availability.ts";
 import { newId, placeholders, type Db, type DbStatement } from "./db.ts";
 import type { CancelCause, PendingNotice } from "./notify.ts";
 import { isDate, isTime, toMinutes, type LocalNow } from "./time.ts";
@@ -139,6 +139,8 @@ export interface Venue {
   maps_url: string;
   /** Dirección para reservar la cancha en línea (opcional; 2026-11-16, aún no se muestra en el sitio). */
   booking_url: string;
+  /** Horario semanal (migración 0014): "HH:MM-HH:MM" o vacío por día, 0 = domingo; "" = sin horario propio. */
+  hours: string;
   sports: number;
   courts: number;
 }
@@ -146,7 +148,7 @@ export interface Venue {
 export async function listVenues(db: Db): Promise<Venue[]> {
   const { results } = await db
     .prepare(
-      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url,
+      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url, v.hours,
               (SELECT count(*) FROM sports s WHERE s.venue_id = v.id AND s.deleted_at IS NULL) AS sports,
               (SELECT count(*) FROM courts c WHERE c.venue_id = v.id AND c.deleted_at IS NULL) AS courts
        FROM venues v WHERE v.deleted_at IS NULL ORDER BY v.name, v.id`,
@@ -161,31 +163,93 @@ export async function getVenue(db: Db, id: string): Promise<Venue> {
   return v;
 }
 
+/**
+ * Horario semanal del lugar (2026-11-16). Recibe 7 elementos (0 = domingo): null si
+ * no abre ese día, o [apertura, cierre]. Un cierre "00:00" es medianoche (24:00).
+ * Devuelve el texto de venues.hours; "" si abre todos los días a toda hora (sin
+ * horario propio). Sin el campo devuelve undefined: no se cambia.
+ */
+export function validateVenueHours(v: unknown): string | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return "";
+  if (!Array.isArray(v) || v.length !== 7) throw invalid("Revisa el horario del lugar.", "hours");
+  const days = v.map((d) => {
+    if (d === null || d === false || d === "") return "";
+    if (!Array.isArray(d) || d.length !== 2) throw invalid("Revisa el horario del lugar.", "hours");
+    const open = d[0];
+    const close = d[1] === "00:00" ? "24:00" : d[1];
+    if (!isTime(open) || !isTime(close) || toMinutes(close) <= toMinutes(open)) {
+      throw invalid("En el horario del lugar, el cierre debe ser posterior a la apertura.", "hours");
+    }
+    return open + "-" + close;
+  });
+  if (days.every((d) => d === "")) throw invalid("Marca al menos un día en que abra el lugar.", "hours");
+  return days.every((d) => d === "00:00-24:00") ? "" : days.join(";");
+}
+
 function validateVenue(input: Record<string, unknown>) {
   return {
     name: requiredText(input.name, 80, "name", "el nombre del lugar"),
     address: optionalText(input.address, 160, "address"),
     maps_url: optionalUrl(input.maps_url, "maps_url"),
     booking_url: optionalUrl(input.booking_url, "booking_url"),
+    hours: validateVenueHours(input.hours),
   };
 }
 
 export async function createVenue(db: Db, input: Record<string, unknown>): Promise<Venue> {
   const v = validateVenue(input);
   const id = newId("L");
-  await db.prepare("INSERT INTO venues (id, name, address, maps_url, booking_url) VALUES (?, ?, ?, ?, ?)")
-    .bind(id, v.name, v.address, v.maps_url, v.booking_url).run();
+  await db.prepare("INSERT INTO venues (id, name, address, maps_url, booking_url, hours) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(id, v.name, v.address, v.maps_url, v.booking_url, v.hours ?? "").run();
   return getVenue(db, id);
 }
 
-export async function updateVenue(db: Db, id: string, input: Record<string, unknown>): Promise<Venue> {
+/**
+ * Edita un lugar. Si cambia el horario y deja fuera algún encuentro futuro
+ * confirmado del lugar (con o sin cancha), se bloquea: el administrador debe
+ * cancelar esos encuentros primero, como con los cambios de una cancha.
+ */
+export async function updateVenue(db: Db, id: string, input: Record<string, unknown>, now?: LocalNow): Promise<Venue> {
+  const current = await getVenue(db, id);
   const v = validateVenue(input);
+  const hours = v.hours ?? current.hours;
+  if (hours !== current.hours && now) {
+    const confirmed = await futureGames(db, "g.venue_id = ? AND g.status = 'confirmado'", [id], now);
+    if (confirmed.length > 0) {
+      const { results: rows } = await db
+        .prepare(
+          `SELECT g.id AS game_id, c.id, c.name, c.status, c.open_time, c.close_time, c.slot_minutes, c.days,
+                  c.available_from, c.available_to, c.disabled_slots
+           FROM games g JOIN courts c ON c.sport_id = g.sport_id AND c.deleted_at IS NULL
+           WHERE g.venue_id = ? AND g.status = 'confirmado' AND g.date >= ?`,
+        )
+        .bind(id, now.date)
+        .all<Court & { game_id: string }>();
+      // Un confirmado sigue en pie si alguna cancha de su deporte aún genera su turno.
+      const broken = confirmed.filter((g) =>
+        !rows.some((c) => c.game_id === g.id && courtHasSlot({ ...c, venue_hours: hours }, g.date, g.time)));
+      if (broken.length > 0) throw affects(broken);
+    }
+  }
   const r = await db
-    .prepare("UPDATE venues SET name = ?, address = ?, maps_url = ?, booking_url = ? WHERE id = ? AND deleted_at IS NULL")
-    .bind(v.name, v.address, v.maps_url, v.booking_url, id)
+    .prepare("UPDATE venues SET name = ?, address = ?, maps_url = ?, booking_url = ?, hours = ? WHERE id = ? AND deleted_at IS NULL")
+    .bind(v.name, v.address, v.maps_url, v.booking_url, hours, id)
     .run();
   if (r.meta.changes === 0) throw new ConfigError("no_existe", "Ese lugar ya no existe.");
   return getVenue(db, id);
+}
+
+/** Error de un cambio que deja fuera encuentros confirmados. */
+function affects(broken: GameRef[]): ConfigError {
+  return new ConfigError(
+    "afecta_encuentros",
+    broken.length === 1
+      ? "Ese cambio deja fuera 1 encuentro confirmado. Cancélalo primero."
+      : `Ese cambio deja fuera ${broken.length} encuentros confirmados. Cancélalos primero.`,
+    undefined,
+    broken,
+  );
 }
 
 export async function deleteVenue(db: Db, id: string, confirm: boolean, now: LocalNow): Promise<DeleteResult> {
@@ -357,12 +421,14 @@ export interface CourtDetail extends Court {
   lng: number | null;
 }
 
-const COURT_DETAIL = `id, sport_id, venue_id, name, surface, status, notes, maps_url, lat, lng,
-  open_time, close_time, slot_minutes, days, available_from, available_to`;
+// Incluye el horario del lugar (venue_hours) para la grilla de horas del admin.
+const COURT_DETAIL = `c.id, c.sport_id, c.venue_id, c.name, c.surface, c.status, c.notes, c.maps_url, c.lat, c.lng,
+  c.open_time, c.close_time, c.slot_minutes, c.days, c.available_from, c.available_to, c.disabled_slots,
+  v.hours AS venue_hours FROM courts c JOIN venues v ON v.id = c.venue_id`;
 
 export async function listCourts(db: Db, sportId: string): Promise<CourtDetail[]> {
   const { results } = await db
-    .prepare(`SELECT ${COURT_DETAIL} FROM courts WHERE sport_id = ? AND deleted_at IS NULL ORDER BY name, id`)
+    .prepare(`SELECT ${COURT_DETAIL} WHERE c.sport_id = ? AND c.deleted_at IS NULL ORDER BY c.name, c.id`)
     .bind(sportId)
     .all<CourtDetail>();
   return results;
@@ -370,7 +436,7 @@ export async function listCourts(db: Db, sportId: string): Promise<CourtDetail[]
 
 export async function getCourt(db: Db, id: string): Promise<CourtDetail> {
   const c = await db
-    .prepare(`SELECT ${COURT_DETAIL} FROM courts WHERE id = ? AND deleted_at IS NULL`)
+    .prepare(`SELECT ${COURT_DETAIL} WHERE c.id = ? AND c.deleted_at IS NULL`)
     .bind(id)
     .first<CourtDetail>();
   if (!c) throw new ConfigError("no_existe", "Esa cancha ya no existe.");
@@ -415,10 +481,20 @@ function validateCourt(input: Record<string, unknown>) {
   if ((from && !isDate(from)) || (to && !isDate(to))) throw invalid("Revisa las fechas.", "available_from");
   if (from && to && to < from) throw invalid("La fecha final está antes de la inicial.", "available_to");
 
+  // Horas desactivadas de la grilla semanal (2026-11-16): "día@HH:MM". Se guardan solo
+  // las que la cancha genera con su horario y sus días. Sin el campo, no se cambian.
+  let disabled_slots: string | undefined;
+  if (input.disabled_slots !== undefined) {
+    if (!Array.isArray(input.disabled_slots)) throw invalid("Revisa las horas desactivadas.", "disabled_slots");
+    const times = weeklyTimes({ open_time, close_time, slot_minutes: slot });
+    const valid = new Set(days.flatMap((d) => times.map((t) => d + "@" + t)));
+    disabled_slots = [...new Set(input.disabled_slots.map(String))].filter((s) => valid.has(s)).sort().join(",");
+  }
+
   return {
     name, surface, status: status as Court["status"], notes, maps_url, lat, lng,
     open_time, close_time, slot_minutes: slot, days: days.join(","),
-    available_from: from, available_to: to,
+    available_from: from, available_to: to, disabled_slots,
   };
 }
 
@@ -429,12 +505,12 @@ export async function createCourt(db: Db, sportId: string, input: Record<string,
   await db
     .prepare(
       `INSERT INTO courts (id, sport_id, venue_id, name, surface, status, notes, maps_url, lat, lng,
-                           open_time, close_time, slot_minutes, days, available_from, available_to)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                           open_time, close_time, slot_minutes, days, available_from, available_to, disabled_slots)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id, sport.id, sport.venue_id, c.name, c.surface, c.status, c.notes, c.maps_url, c.lat, c.lng,
-      c.open_time, c.close_time, c.slot_minutes, c.days, c.available_from, c.available_to,
+      c.open_time, c.close_time, c.slot_minutes, c.days, c.available_from, c.available_to, c.disabled_slots ?? "",
     )
     .run();
   return getCourt(db, id);
@@ -453,28 +529,21 @@ export async function updateCourt(
 ): Promise<CourtDetail> {
   const current = await getCourt(db, id);
   const c = validateCourt(input);
-  const next: Court = { ...current, ...c };
+  const disabled = c.disabled_slots ?? current.disabled_slots ?? "";
+  const next: Court = { ...current, ...c, disabled_slots: disabled };
   const confirmed = await futureGames(db, "g.court_id = ? AND g.status = 'confirmado'", [id], now);
   const broken = confirmed.filter((g) => !courtHasSlot(next, g.date, g.time));
-  if (broken.length > 0) {
-    throw new ConfigError(
-      "afecta_encuentros",
-      broken.length === 1
-        ? "Ese cambio deja fuera 1 encuentro confirmado. Cancélalo primero."
-        : `Ese cambio deja fuera ${broken.length} encuentros confirmados. Cancélalos primero.`,
-      undefined,
-      broken,
-    );
-  }
+  if (broken.length > 0) throw affects(broken);
   await db
     .prepare(
       `UPDATE courts SET name = ?, surface = ?, status = ?, notes = ?, maps_url = ?, lat = ?, lng = ?,
-         open_time = ?, close_time = ?, slot_minutes = ?, days = ?, available_from = ?, available_to = ?
+         open_time = ?, close_time = ?, slot_minutes = ?, days = ?, available_from = ?, available_to = ?,
+         disabled_slots = ?
        WHERE id = ?`,
     )
     .bind(
       c.name, c.surface, c.status, c.notes, c.maps_url, c.lat, c.lng,
-      c.open_time, c.close_time, c.slot_minutes, c.days, c.available_from, c.available_to, id,
+      c.open_time, c.close_time, c.slot_minutes, c.days, c.available_from, c.available_to, disabled, id,
     )
     .run();
   return getCourt(db, id);

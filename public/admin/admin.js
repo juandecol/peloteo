@@ -15,6 +15,54 @@
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const plural = (n, uno, varios) => (n === 1 ? '1 ' + uno : n + ' ' + varios);
 
+
+  // ---------------- horarios (2026-11-16) ----------------
+  // Horario semanal del lugar (venues.hours): siete tramos "HH:MM-HH:MM" separados por ";"
+  // (0 = domingo), vacío si no abre. "" = sin horario propio (abierto todo el día).
+  const WEEK = [1, 2, 3, 4, 5, 6, 0]; // en pantalla, de lunes a domingo
+  const toMin = (t) => { const a = String(t).split(':').map(Number); return a[0] * 60 + a[1]; };
+  const fromMin = (n) => String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+  function parseHours(text) {
+    const p = text ? String(text).split(';') : [];
+    if (p.length !== 7) return null;
+    return p.map((x) => (x ? x.split('-') : null));
+  }
+  const showTime = (t) => (t === '24:00' ? '00:00' : t); // los campos de hora no aceptan 24:00
+  function hoursSummary(text) {
+    const h = parseHours(text);
+    if (!h) return 'Sin horario propio: cada cancha usa el suyo.';
+    return WEEK.map((d) => cap(DIAS[d]) + ': ' + (h[d] ? h[d][0] + ' a ' + h[d][1] : 'cerrado')).join(' · ');
+  }
+  // Turnos semanales de una cancha según apertura, cierre y duración.
+  function weekTimes(open, close, slot) {
+    const out = [];
+    if (!/^\d\d:\d\d$/.test(open || '') || !/^\d\d:\d\d$/.test(close || '') || !(slot > 0)) return out;
+    for (let t = toMin(open); t + slot <= toMin(close); t += slot) out.push(fromMin(t));
+    return out;
+  }
+  // Grilla de horas de la cancha: una fila por día de operación; cada hora se activa o
+  // desactiva. Las horas fuera del horario del lugar se muestran tachadas y sin casilla.
+  function slotGrid(open, close, slot, days, off, venueHours) {
+    const times = weekTimes(open, close, slot);
+    const vh = parseHours(venueHours);
+    const rows = WEEK.filter((d) => days.includes(d));
+    if (!times.length || !rows.length) return '<p class="small muted">Elige días, apertura, cierre y duración para ver las horas.</p>';
+    return rows.map((d) => '<div class="srow"><span class="sday" title="' + DIAS[d] + '">' + cap(DIAS[d].slice(0, 2)) + '</span><div class="chips">' + times.map((t) => {
+      const k = d + '@' + t;
+      const closed = vh && (!vh[d] || toMin(t) < toMin(vh[d][0]) || toMin(t) + slot > toMin(vh[d][1]));
+      return closed ? '<span class="chip closed" title="Fuera del horario del lugar">' + t + '</span>'
+        : '<label class="chip"><input type="checkbox" data-slot="' + k + '" aria-label="' + cap(DIAS[d]) + ' ' + t + '"' + (off.has(k) ? '' : ' checked') + '>' + t + '</label>';
+    }).join('') + '</div></div>').join('');
+  }
+  function refreshSlotGrid() {
+    const f = document.querySelector('form[data-f="court"]');
+    const g = document.getElementById('slot-grid');
+    if (!f || !g) return;
+    const days = [...f.querySelectorAll('input[name="days"]:checked')].map((x) => Number(x.value));
+    g.innerHTML = slotGrid(f.elements.open_time.value, f.elements.close_time.value, Number(f.elements.slot_minutes.value), days, S.courtOff, courtVenueHours());
+  }
+  const courtVenueHours = () => (S.court && S.court.venue_hours !== undefined ? S.court.venue_hours : S.venue ? S.venue.hours : '');
+
   async function copy(text, done) {
     try { await navigator.clipboard.writeText(text); toast(done); } catch (e) { toast('No se pudo copiar. Selecciónalo y cópialo a mano.'); }
   }
@@ -28,6 +76,7 @@
 
   // ---------------- estado ----------------
   const S = {
+    courtOff: new Set(),
     session: null, // respuesta de /admin/session
     view: 'loading',
     venueId: null, sportId: null, courtId: null,
@@ -91,6 +140,9 @@
         const [a, b] = await Promise.all([api('GET', '/admin/api/courts/' + S.courtId), api('GET', '/admin/api/courts/' + S.courtId + '/blocks')]);
         S.court = a.ok ? a.data : null; S.blocks = b.ok ? b.data : [];
       } else { S.court = null; S.blocks = []; }
+      // Horas desactivadas de la grilla (se editan en pantalla y se envían al guardar).
+      S.courtOff = new Set(S.court && S.court.disabled_slots ? S.court.disabled_slots.split(',') : []);
+      if (!S.venue && S.sport) { const v = await api('GET', '/admin/api/venues/' + S.sport.venue_id); S.venue = v.ok ? v.data : null; }
       const m = await api('GET', '/admin/api/meta'); if (m.ok && m.data.surfaces) S.surfaces = m.data.surfaces;
     } else if (v === 'games') {
       const r = await api('GET', '/admin/api/games'); if (r.ok) S.games = r.data;
@@ -180,7 +232,22 @@
       '<label class="f" for="vm">Enlace de Google Maps <small>(opcional)</small></label><input id="vm" name="maps_url" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/..." value="' + esc(ve ? ve.maps_url : '') + '">' +
       '<label class="f" for="vb">Enlace para reservar en línea <small>(opcional)</small></label><input id="vb" name="booking_url" type="url" inputmode="url" placeholder="https://..." value="' + esc(ve ? ve.booking_url || '' : '') + '" aria-describedby="vb-h">' +
       '<p id="vb-h" class="small muted">Página del club donde se reserva la cancha. Por ahora solo se guarda; más adelante se mostrará a los jugadores.</p>' +
+      venueHoursFields(ve ? ve.hours : '') +
       errBox() + affectedBox('delConfirm') + '<div class="actions"><button class="btn" type="submit">Guardar lugar</button>' + (ve ? delBtn('venue', 'Eliminar lugar') : '') + '</div></form>';
+  }
+
+  // Horario del lugar: un día por fila, con casilla "abre" y horas de apertura y cierre.
+  function venueHoursFields(text) {
+    const h = parseHours(text) || Array.from({ length: 7 }, () => ['00:00', '24:00']);
+    return '<fieldset style="border:0;padding:0;margin:0" aria-describedby="vh-h"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Horario del lugar</legend>' +
+      '<p id="vh-h" class="small muted" style="margin:.15rem 0 .2rem">Marca los días en que abre y su horario. Ninguna cancha del lugar ofrece horas fuera de este horario. Un cierre a las 00:00 es medianoche.</p><div class="hours">' +
+      WEEK.map((d) => {
+        const on = !!h[d];
+        const [o, c] = h[d] || ['08:00', '22:00'];
+        return '<div class="hrow"><label class="hday"><input type="checkbox" name="hours" value="' + d + '" data-hday="' + d + '"' + (on ? ' checked' : '') + '>' + cap(DIAS[d]) + '</label>' +
+          '<input type="time" data-hopen="' + d + '" aria-label="' + cap(DIAS[d]) + ', abre" value="' + showTime(o) + '"' + (on ? '' : ' disabled') + '><span aria-hidden="true">a</span>' +
+          '<input type="time" data-hclose="' + d + '" aria-label="' + cap(DIAS[d]) + ', cierra" value="' + showTime(c) + '"' + (on ? '' : ' disabled') + '></div>';
+      }).join('') + '</div></fieldset>';
   }
 
   function vVenue() {
@@ -190,6 +257,7 @@
       '<div class="card"><h2>' + esc(ve.name) + '</h2><p class="id">ID ' + esc(ve.id) + '</p><p>' + esc(ve.address || 'Sin dirección') + '</p>' +
       (ve.maps_url ? '<p><a href="' + esc(ve.maps_url) + '" target="_blank" rel="noopener">Ver en Google Maps</a></p>' : '') +
       (ve.booking_url ? '<p><a href="' + esc(ve.booking_url) + '" target="_blank" rel="noopener">Reservar en línea</a></p>' : '') +
+      '<p class="small"><b>Horario:</b> ' + esc(hoursSummary(ve.hours)) + '</p>' +
       '<div class="actions"><button type="button" class="btn ghost sm" data-a="go" data-v="venueForm">Editar lugar</button></div></div><h3>Deportes en este lugar</h3>';
     h += S.sports.length ? '<ul class="list">' + S.sports.map((s) => {
       const nc = s.categories.filter(Boolean).length;
@@ -253,6 +321,9 @@
       '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Días de operación</legend><div class="days">' + [1, 2, 3, 4, 5, 6, 0].map((d) => '<label><input type="checkbox" name="days" value="' + d + '"' + (days.includes(d) ? ' checked' : '') + '><span aria-hidden="true">' + DIAS[d].slice(0, 2) + '</span><span class="sr-only">' + DIAS[d] + '</span></label>').join('') + '</div></fieldset>' +
       '<div class="two"><div><label class="f" for="ca">Abre</label><input id="ca" name="open_time" type="time" value="' + esc(c.open_time) + '"></div><div><label class="f" for="cc">Cierra</label><input id="cc" name="close_time" type="time" value="' + esc(c.close_time) + '"></div></div>' +
       '<label class="f" for="ct">Duración de cada turno</label><select id="ct" name="slot_minutes">' + [60, 90, 120].map((n) => '<option value="' + n + '"' + (Number(c.slot_minutes) === n ? ' selected' : '') + '>' + n + ' minutos</option>').join('') + '</select>' +
+      '<fieldset style="border:0;padding:0;margin:0" aria-describedby="sg-h"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">Horas habilitadas</legend>' +
+      '<p id="sg-h" class="small muted" style="margin:.15rem 0 .2rem">Desmarca las horas en que esta cancha no se ofrece, todas las semanas. Para un día completo, desmárcalo en Días de operación; para una fecha puntual, usa un bloqueo. Las horas tachadas están fuera del horario del lugar.</p>' +
+      '<div id="slot-grid" class="slotgrid">' + slotGrid(c.open_time, c.close_time, Number(c.slot_minutes), days, S.courtOff, courtVenueHours()) + '</div></fieldset>' +
       '<div class="two"><div><label class="f" for="cf">Disponible desde <small>(opcional)</small></label><input id="cf" name="available_from" type="date" value="' + esc(c.available_from || '') + '"></div><div><label class="f" for="ch">Hasta <small>(opcional)</small></label><input id="ch" name="available_to" type="date" value="' + esc(c.available_to || '') + '"></div></div>' +
       errBox() + affectedBox(S.affected && S.affected.code === 'requiere_confirmacion' ? 'delConfirm' : null) +
       '<div class="actions"><button class="btn" type="submit">Guardar cancha</button>' + (co ? delBtn('court', 'Eliminar cancha') : '') + '</div></form>' +
@@ -504,6 +575,9 @@
       if (wasForced) await go('venues'); else { S.err = ''; render(); $('#app form').reset(); }
     },
     async venue(d) {
+      const f = document.querySelector('form[data-f="venue"]');
+      const val = (sel) => { const el = f.querySelector(sel); return el ? el.value : ''; };
+      d = Object.assign({}, d, { hours: [0, 1, 2, 3, 4, 5, 6].map((n) => ((d.hours || []).includes(n) ? [val('[data-hopen="' + n + '"]'), val('[data-hclose="' + n + '"]')] : null)) });
       const r = S.venueId ? await api('PUT', '/admin/api/venues/' + S.venueId, d) : await api('POST', '/admin/api/venues', d);
       if (!r.ok) { fail(r); return; }
       toast('Lugar guardado.'); S.venue = r.data; await go('venue', { venueId: r.data.id });
@@ -516,7 +590,7 @@
     },
     async block(d) { await saveBlock(d, false); },
     async court(d) {
-      const body = Object.assign({}, d, { days: d.days || [], slot_minutes: Number(d.slot_minutes), sport_id: S.sportId });
+      const body = Object.assign({}, d, { days: d.days || [], slot_minutes: Number(d.slot_minutes), sport_id: S.sportId, disabled_slots: [...S.courtOff] });
       const r = S.courtId ? await api('PUT', '/admin/api/courts/' + S.courtId, body) : await api('POST', '/admin/api/courts', body);
       if (!r.ok) { fail(r); return; }
       toast('Cancha guardada.'); await go('sport');
@@ -608,6 +682,16 @@
   function focusWipe() { const el = document.getElementById('wipe-confirm'); if (el) el.focus(); }
 
   // ---------------- arranque ----------------
+  document.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.dataset.hday !== undefined) {
+      // Día del lugar: sin la casilla, sus horas no se editan.
+      el.form.querySelectorAll('[data-hopen="' + el.dataset.hday + '"],[data-hclose="' + el.dataset.hday + '"]').forEach((x) => { x.disabled = !el.checked; });
+      return;
+    }
+    if (el.dataset.slot) { if (el.checked) S.courtOff.delete(el.dataset.slot); else S.courtOff.add(el.dataset.slot); return; }
+    if (el.form && el.form.dataset.f === 'court' && ['open_time', 'close_time', 'slot_minutes', 'days'].includes(el.name)) refreshSlotGrid();
+  });
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-a]');
     if (!el || el.disabled) return;
