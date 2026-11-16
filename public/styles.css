@@ -484,3 +484,5 @@ legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
 .hero + .cta{margin-top:0}
 /* Inicio: espacio entre el calendario y el pie de página a la mitad, de 40 px a 20 px (2026-11-16). */
 #app:has(> .cta.week:last-child){padding-bottom:.75rem}
+/* Inicio: espacio entre la barra superior y el héroe a la mitad, de 16 px a 8 px (2026-11-16). */
+#app:has(> .hero:first-child){padding-top:.5rem}
