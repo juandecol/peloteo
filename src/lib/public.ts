@@ -126,7 +126,8 @@ export interface PublicSport {
 }
 
 export interface VenueOffer {
-  venue: { id: string; name: string; address: string; maps_url: string };
+  /** private: club privado, solo para socios y sus invitados (2026-11-16). */
+  venue: { id: string; name: string; address: string; maps_url: string; private: boolean };
   sport: PublicSport;
   courts: number;
   open_games: number;
@@ -150,13 +151,14 @@ export async function listVenuesForSport(db: Db, key: string, now: LocalNow): Pr
   if (sports.length === 0) return [];
   const ids = sports.map((s) => s.id);
   const cats = await categoriesOf(db, ids);
-  const { results: venues } = await db
+  const { results: rows } = await db
     .prepare(
-      `SELECT id, name, address, maps_url, sort_order FROM venues
+      `SELECT id, name, address, maps_url, sort_order, private FROM venues
        WHERE id IN (${placeholders(sports.length)})`,
     )
     .bind(...sports.map((s) => s.venue_id))
-    .all<VenueOffer["venue"] & { sort_order: number }>();
+    .all<Omit<VenueOffer["venue"], "private"> & { sort_order: number; private: number }>();
+  const venues = rows.map((v) => ({ ...v, private: v.private === 1 }));
   const { results: open } = await db
     .prepare(
       `SELECT sport_id, date, time FROM games

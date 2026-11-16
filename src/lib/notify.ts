@@ -59,6 +59,8 @@ export interface NoticeGame {
   venue_name: string;
   venue_address: string;
   venue_maps: string;
+  /** 1 si el lugar es un club privado (2026-11-16). */
+  venue_private: number;
   court_name: string | null;
   court_surface: string | null;
   court_notes: string | null;
@@ -142,7 +144,7 @@ export async function loadNoticeGame(db: Db, gameId: string): Promise<NoticeGame
   const game = await db
     .prepare(
       `SELECT g.id, g.date, g.time, g.status, g.capacity, g.accepted_levels, g.sport_id,
-              s.name AS sport_name, v.name AS venue_name, v.address AS venue_address, v.maps_url AS venue_maps,
+              s.name AS sport_name, v.name AS venue_name, v.address AS venue_address, v.maps_url AS venue_maps, v.private AS venue_private,
               c.name AS court_name, c.surface AS court_surface, c.notes AS court_notes, c.maps_url AS court_maps
        FROM games g
        JOIN venues v ON v.id = g.venue_id

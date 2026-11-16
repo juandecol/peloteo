@@ -21,6 +21,19 @@ export const DISCLAIMER = {
   en: "Peloteo only schedules the match between players. Playing is subject to the venue's availability, and booking the court is the players' responsibility: Peloteo is not responsible if you can't find a place to play.",
 };
 
+/**
+ * Relación con el lugar (2026-11-16): va en "partido publicado", "jugador se sumó" y
+ * "partido confirmado". El mismo texto se muestra en el sitio (venueNote en public/app.js).
+ */
+export function venueNote(name: string, isPrivate: boolean, lang: Lang): string {
+  if (lang === "en") {
+    return `peloteo.cl has no relationship with ${name}.` +
+      (isPrivate ? ` ${name} is a private club: only members and their guests may play there. Booking on peloteo.cl does not guarantee access to the private clubs listed on the platform.` : "");
+  }
+  return `peloteo.cl no tiene ninguna relación con ${name}.` +
+    (isPrivate ? ` ${name} es un club privado: para jugar ahí solo se permiten socios y sus invitados. Reservar en peloteo.cl no garantiza el acceso a los clubes privados que aparecen en la plataforma.` : "");
+}
+
 const RESEND_URL = "https://api.resend.com/emails";
 
 export interface Email {
@@ -172,6 +185,7 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
   const lugar = game.venue_name + (game.venue_address ? `, ${game.venue_address}` : "");
   const mapa = game.court_maps || game.venue_maps;
   const JUEGAN = T("Juegan", "Players");
+  const lugarNota: Block = { p: venueNote(game.venue_name, game.venue_private === 1, lang) };
   const base: [string, string][] = [
     [T("Deporte", "Sport"), sport],
     [T("Cuándo", "When"), cuando],
@@ -221,6 +235,7 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
                 "Your match is posted. When it fills up, we'll assign the first free court at that time and let you know.",
               ),
         },
+        lugarNota,
         { kv: [...base, [T("Busca", "Looking for"), `${falta(missing)}, ${nivelesTexto(parseIntList(game.accepted_levels, 1, 5), lang)}`]] },
         cancelBlock,
       ];
@@ -236,6 +251,7 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
             ? `${nuevo ? nivel(nuevo) : "A player"} joined your match. Still ${falta(missing)}.`
             : `${nuevo ? nivel(nuevo) : "Un jugador"} se sumó a tu partido. Todavía ${falta(missing)}.`,
         },
+        lugarNota,
         { kv: [...base, [JUEGAN, quienes(game.players)]] },
         cancelBlock,
       ];
@@ -272,6 +288,7 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
         },
         ...(mapa ? [{ button: [T("Cómo llegar", "Directions"), mapa] as [string, string] }] : []),
         { p: T(DISCLAIMER.es, DISCLAIMER.en) },
+        lugarNota,
         { h: T("Contacto de tus compañeros", "Your partners' contact details") },
         {
           list: others.map((p) => ({

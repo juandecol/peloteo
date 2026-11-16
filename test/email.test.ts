@@ -338,3 +338,37 @@ test("consola: muestra el correo con enlaces al servidor local", async () => {
   assert.match(out[0]!, /Asunto: Tu partido de Tenis está publicado/);
   assert.match(out[0]!, /http:\/\/localhost:8787\/#cancelar=[0-9a-f]{32}/);
 });
+
+test("correos: publicado, se sumó y confirmado dicen que peloteo.cl no tiene relación con el lugar; si es privado, que solo entran socios e invitados (2026-11-16)", async () => {
+  const w = world();
+  const a = w.browser();
+  await a("POST", "/api/games", openTenis("MT"));
+  const pub = w.sent[0]!;
+  const m1 = renderEmail(pub.event, pub.game.players[0]!, pub.game, SITE);
+  assert.match(m1.text, /peloteo\.cl no tiene ninguna relación con Country Club Santa Martina\./);
+  assert.doesNotMatch(m1.text, /club privado/);
+
+  w.db.exec("UPDATE venues SET private = 1 WHERE id = 'L-SM001'");
+  w.sent.length = 0;
+  const g = (await a("POST", "/api/games", openTenis("MT", "19:00"))).json.game;
+  await w.browser()("POST", `/api/games/${g.id}/join`, { player: player("RS") });
+  for (const s of w.sent) {
+    const m = renderEmail(s.event, s.game.players.find((p) => p.id === s.player_id)!, s.game, SITE);
+    assert.match(m.text, /Country Club Santa Martina es un club privado: para jugar ahí solo se permiten socios y sus invitados\. Reservar en peloteo\.cl no garantiza el acceso/, s.event);
+    assert.match(m.html, /es un club privado/);
+  }
+  assert.deepEqual([...new Set(w.sent.map((s) => s.event))], ["partido_publicado", "partido_confirmado"]);
+  // En inglés.
+  const s = w.sent.at(-1)!;
+  const en = renderEmail(s.event, { ...s.game.players[0]!, lang: "en" }, s.game, SITE);
+  assert.match(en.text, /Country Club Santa Martina is a private club: only members and their guests may play there\./);
+});
+
+test("correos: 'se sumó' también lleva la relación con el lugar", async () => {
+  const w = world();
+  const g = (await w.browser()("POST", "/api/games", { ...openTenis("MT"), sport_id: "D-PAD01", time: "18:30", capacity: 4 })).json.game;
+  w.sent.length = 0;
+  await w.browser()("POST", `/api/games/${g.id}/join`, { player: player("RS") });
+  const s = w.sent.find((x) => x.event === "jugador_se_sumo")!;
+  assert.match(renderEmail(s.event, s.game.players[0]!, s.game, SITE).text, /peloteo\.cl no tiene ninguna relación con Country Club Santa Martina/);
+});

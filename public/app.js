@@ -395,7 +395,7 @@
     let h = '<p class="crumbs"><button type="button" data-a="back">‹ ' + L('Volver', 'Back') + '</button></p><h1 class="h">' + (g ? L('Unirme al partido', 'Join the match') : L('Abrir partido', 'Open a match')) + '</h1>' +
       '<div class="card"><dl class="kv"><dt>' + L('Deporte', 'Sport') + '</dt><dd>' + esc(sportLabel(sport.name)) + '</dd><dt>' + L('Lugar', 'Place') + '</dt><dd>' + esc(venue.name) + '</dd><dt>' + L('Cuándo', 'When') + '</dt><dd>' + fechaHora(date, time) + '</dd>' +
       (g ? '<dt>' + L('Ya están', 'Already in') + '</dt><dd>' + who(g.players) + '</dd><dt>' + L('Busca', 'Looking for') + '</dt><dd>' + cap(levelsText(g.accepted_levels)) + ', ' + faltan(g.missing) + '</dd>' : '') + '</dl>' +
-      (g ? '' : '<p class="small muted">' + (coord() ? L('Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll share everyone's contact details so you can book the court with the club.") : L('La cancha se asigna cuando el partido se completa.', 'The court is assigned when the match fills up.')) + '</p>') + '</div>' +
+      (g ? '' : '<p class="small muted">' + (coord() ? L('Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll share everyone's contact details so you can book the court with the club.") : L('La cancha se asigna cuando el partido se completa.', 'The court is assigned when the match fills up.')) + '</p>') + venueNote(venue) + '</div>' +
       // Formulario en tres módulos numerados (2026-11-16): quién juega, características del juego y contacto.
       '<form data-f="play" novalidate>' + step(1, L('Quién juega', "Who's playing")) +
       // Iniciales siempre en blanco (2026-11-16): cada partido las pide de nuevo.
@@ -469,6 +469,13 @@
     return h + '</div>';
   }
 
+  // Relación con el lugar (2026-11-16): Peloteo no tiene relación con él; si es un club
+  // privado, solo juegan sus socios y sus invitados, y agendar aquí no garantiza el acceso.
+  // El mismo texto va en los correos (venueNote en src/lib/email.ts).
+  const venueNote = (v) => '<p class="small venue-note">' + L('peloteo.cl no tiene ninguna relación con ' + esc(v.name) + '.', 'peloteo.cl has no relationship with ' + esc(v.name) + '.') +
+    (v.private ? ' ' + L('<b>' + esc(v.name) + ' es un club privado</b>: para jugar ahí solo se permiten socios y sus invitados. Reservar en peloteo.cl no garantiza el acceso a los clubes privados que aparecen en la plataforma.',
+      '<b>' + esc(v.name) + ' is a private club</b>: only members and their guests may play there. Booking on peloteo.cl does not guarantee access to the private clubs listed on the platform.') : '') + '</p>';
+
   function vDone() {
     const g = S.done;
     if (!g) return '<p>' + L('Ese partido ya no existe.', 'That match no longer exists.') + '</p><div class="actions"><button type="button" class="btn" data-a="go" data-v="home">' + L('Volver al inicio', 'Back to home') + '</button></div>';
@@ -477,12 +484,7 @@
       : g.status === 'sin_cancha' ? L('Se completó, pero ya no quedan canchas libres a esa hora. Les avisaremos para elegir otro turno.', "It filled up, but there are no free courts left at that time. We'll let you know so you can pick another time.")
       : coord() ? L('Cuando se complete, te avisamos y les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll let you know and share everyone's contact details so you can book the court with the club.")
       : L('Cuando se complete, les asignamos la primera cancha libre de ese turno y te avisamos.', "When it fills up, we'll assign the first free court at that time and let you know.");
-    // Relación con el lugar (2026-11-16): Peloteo no tiene relación con él; si es un club
-    // privado, solo juegan sus socios y agendar aquí no garantiza el acceso.
-    const venueNote = '<p class="small venue-note">' + L('peloteo.cl no tiene ninguna relación con ' + esc(g.venue.name) + '.', 'peloteo.cl has no relationship with ' + esc(g.venue.name) + '.') +
-      (g.venue.private ? ' ' + L('<b>' + esc(g.venue.name) + ' es un club privado</b>: para jugar ahí solo se permiten socios y sus invitados. Reservar en peloteo.cl no garantiza el acceso a los clubes privados que aparecen en la plataforma.',
-        '<b>' + esc(g.venue.name) + ' is a private club</b>: only members and their guests may play there. Booking on peloteo.cl does not guarantee access to the private clubs listed on the platform.') : '') + '</p>';
-    return '<h1 class="h">' + title + '</h1><p>' + text + '</p>' + venueNote + gameCard(g, false) +
+    return '<h1 class="h">' + title + '</h1><p>' + text + '</p>' + venueNote(g.venue) + gameCard(g, false) +
       '<div class="actions"><button type="button" class="btn" data-a="go" data-v="mine">' + L('Ver mis partidos', 'See my matches') + '</button><button type="button" class="btn ghost" data-a="go" data-v="home">' + L('Agendar otro', 'Book another') + '</button></div>';
   }
 

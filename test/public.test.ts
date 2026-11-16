@@ -547,3 +547,10 @@ test("partido publicado y Mis partidos indican si el lugar es un club privado (2
   assert.equal(g.venue.name, "Country Club Santa Martina");
   assert.ok(((await a.req("GET", "/api/me/games")).json as any[]).every((x) => x.venue.private === true));
 });
+
+test("lugares del deporte: indican si el lugar es un club privado, para el aviso del formulario (2026-11-16)", async () => {
+  const w = world();
+  w.db.exec("UPDATE venues SET private = 1 WHERE id = 'L-SM001'");
+  const offers = (await w.browser().req("GET", "/api/venues?sport=tenis")).json as any[];
+  assert.deepEqual(offers.map((o) => [o.venue.id, o.venue.private]), [["L-AR002", false], ["L-SM001", true]]);
+});
