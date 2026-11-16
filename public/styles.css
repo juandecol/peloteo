@@ -475,3 +475,7 @@ legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
 
 /* Aviso de relación con el lugar y club privado al publicar o sumarse (2026-11-16). */
 .venue-note{border-left:3px solid var(--line);padding:.35rem 0 .35rem .7rem;margin:.6rem 0 .9rem}
+/* Contorno negro de 1 px en el título "¿JUGAMOS?" para que destaque sobre la foto (2026-11-16).
+   El trazo va centrado en el borde de la letra y paint-order lo dibuja detrás del relleno:
+   con 2 px quedan visibles 1 px por fuera, sin adelgazar las letras. */
+.hero h1{-webkit-text-stroke:2px #000;paint-order:stroke fill}
