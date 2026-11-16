@@ -419,3 +419,29 @@ footer.site a:hover{color:var(--ink)}
 
 /* Aviso de responsabilidad de los partidos confirmados (2026-11-16). */
 .disclaimer{border-left:3px solid var(--ball);padding:.35rem 0 .35rem .7rem;margin:.8rem 0}
+
+/* Formulario de partido en tres módulos numerados (2026-11-16). */
+.step{background:var(--soft);border:1px solid var(--line);border-radius:16px;padding:1rem;margin:1rem 0}
+.step-h{display:flex;align-items:center;gap:.6rem;margin:0 0 .2rem;font-size:1rem;font-stretch:125%;font-weight:800;text-transform:uppercase;letter-spacing:.01em}
+.step-h .num{flex:none;display:inline-grid;place-items:center;width:1.9rem;height:1.9rem;border-radius:50%;background:var(--court);color:#fff;font-size:1rem;font-variant-numeric:tabular-nums}
+.step > label.f:first-of-type,.step > fieldset:first-of-type legend.f{margin-top:.7rem}
+legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
+/* Preguntas del formulario de partido: más grandes, con viñeta y más aire arriba
+   que abajo, para que cada una quede pegada a sus opciones (2026-11-16). */
+.step label.f,.step legend.f{font-size:calc(.9rem + 1px);margin:1.5rem 0 0}
+.step label.f::before,.step legend.f::before{content:"";display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--court);margin-right:.5rem;vertical-align:.1em}
+.step .step-h + label.f,.step .step-h + fieldset legend.f{margin-top:.9rem}
+.req{color:var(--clay);margin-left:.15rem;font-weight:800}
+.req-note{margin:.2rem 0 0}
+/* Los navegadores no aplican el margen superior de un <legend>: el aire va en su fieldset. */
+.step > fieldset{margin-top:1.5rem !important}
+.step > .step-h + fieldset{margin-top:.9rem !important}
+.step legend.f{margin-top:0}
+/* Fondo de los módulos: tono arcilla muy leve, a partir de #EEAB62 (2026-11-16).
+   Transparente sobre el fondo, para que también funcione en modo oscuro. */
+.step{background:rgb(238 171 98 / .6);border-color:rgb(238 171 98 / .85)}
+/* Modo oscuro: el mismo arcilla, más suave, para que las indicaciones y asteriscos se lean. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .step{background:rgb(238 171 98 / .2);border-color:rgb(238 171 98 / .5)}
+}
+:root[data-theme="dark"] .step{background:rgb(238 171 98 / .2);border-color:rgb(238 171 98 / .5)}

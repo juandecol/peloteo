@@ -68,8 +68,10 @@
   // Aviso de responsabilidad de los partidos confirmados (el mismo texto va en el correo, src/lib/email.ts).
   const disclaimer = () => '<p class="small disclaimer">' + L('Peloteo solo agenda el encuentro entre los jugadores. Jugar queda sujeto a la disponibilidad del lugar, y reservar la cancha es responsabilidad de los jugadores: Peloteo no se hace responsable si no encuentran dónde jugar.',
     "Peloteo only schedules the match between players. Playing is subject to the venue's availability, and booking the court is the players' responsibility: Peloteo is not responsible if you can't find a place to play.") + '</p>';
+  // Campo obligatorio: asterisco visible y "(obligatorio)" para lectores de pantalla.
+  const req = () => '<span class="req"><span aria-hidden="true">*</span><span class="sr-only">' + L('(obligatorio)', '(required)') + '</span></span>';
   // Grupo de opciones de una sola elección (rama, intención), recordando la última usada.
-  const choice = (name, legend, opts, selected) => '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + legend + '</legend><div class="checks">' +
+  const choice = (name, legend, opts, selected) => '<fieldset style="border:0;padding:0;margin:0"><legend class="f">' + legend + req() + '</legend><div class="checks">' +
     opts.map(([v, es, en]) => '<label><input type="radio" name="' + name + '" value="' + v + '"' + (selected === v ? ' checked' : '') + '>' + L(es, en) + '</label>').join('') + '</div></fieldset>';
   // Nombres de deportes en inglés (los entrega /api/today); los lugares no se traducen.
   const sportKeyOf = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -341,14 +343,17 @@
     return h;
   }
 
-  function levelRadios(sport, allowed, selected) {
-    return '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('Tu nivel de juego', 'Your playing level') + ' <small style="font-weight:400" class="muted">' + L('(1 avanzado, 5 principiante)', '(1 advanced, 5 beginner)') + '</small></legend><div class="levels">' +
+  function levelRadios(sport, allowed, selected, required) {
+    return '<fieldset style="border:0;padding:0;margin:0"><legend class="f">' + L('Tu nivel de juego', 'Your playing level') + (required ? req() : '') + ' <small style="font-weight:400" class="muted">' + L('(1 avanzado, 5 principiante)', '(1 advanced, 5 beginner)') + '</small></legend><div class="levels">' +
       sport.categories.map((c) => {
         const ok = !allowed || allowed.includes(c.level);
         return '<label class="lvl"' + (ok ? '' : ' style="opacity:.45"') + '><input type="radio" name="level" value="' + c.level + '"' + (selected === c.level && ok ? ' checked' : '') + (ok ? '' : ' disabled') +
           '><span class="n">' + c.level + '</span><span>' + esc(catLabel(c)) + (ok ? '' : ' <small>' + L('(este partido no lo acepta)', "(this match doesn't accept it)") + '</small>') + '</span></label>';
       }).join('') + '</div></fieldset>';
   }
+
+  // Módulo numerado del formulario: rectángulo redondeado con número y subtítulo. Se cierra con '</section>'.
+  const step = (n, title) => '<section class="step" aria-labelledby="step' + n + '"><h2 class="step-h" id="step' + n + '"><span class="num" aria-hidden="true">' + n + '</span>' + title + '</h2>';
 
   function vForm() {
     const g = S.game, sport = S.offer && S.offer.sport, venue = S.offer && S.offer.venue;
@@ -361,27 +366,31 @@
       '<div class="card"><dl class="kv"><dt>' + L('Deporte', 'Sport') + '</dt><dd>' + esc(sportLabel(sport.name)) + '</dd><dt>' + L('Lugar', 'Place') + '</dt><dd>' + esc(venue.name) + '</dd><dt>' + L('Cuándo', 'When') + '</dt><dd>' + fechaHora(date, time) + '</dd>' +
       (g ? '<dt>' + L('Ya están', 'Already in') + '</dt><dd>' + who(g.players) + '</dd><dt>' + L('Busca', 'Looking for') + '</dt><dd>' + cap(levelsText(g.accepted_levels)) + ', ' + faltan(g.missing) + '</dd>' : '') + '</dl>' +
       (g ? '' : '<p class="small muted">' + (coord() ? L('Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll share everyone's contact details so you can book the court with the club.") : L('La cancha se asigna cuando el partido se completa.', 'The court is assigned when the match fills up.')) + '</p>') + '</div>' +
-      '<form data-f="play" novalidate>' +
-      '<label class="f" for="ini">' + L('Tus iniciales', 'Your initials') + '</label><input id="ini" name="initials" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="JR" value="' + esc(prefs.initials || '') + '">' +
+      // Formulario en tres módulos numerados (2026-11-16): quién juega, características del juego y contacto.
+      '<form data-f="play" novalidate>' + step(1, L('Quién juega', "Who's playing")) +
+      // Iniciales siempre en blanco (2026-11-16): cada partido las pide de nuevo.
+      '<label class="f" for="ini">' + L('Tus iniciales', 'Your initials') + req() + ' <small class="muted" style="font-weight:400">' + L('(2 a 4 letras)', '(2 to 4 letters)') + '</small></label><input id="ini" name="initials" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" value="">' +
       choice('rama', L('¿En qué rama juegas?', 'Which division do you play in?'), RAMAS, prefs.rama) +
-      levelRadios(sport, g ? g.accepted_levels : null, myLevel);
+      levelRadios(sport, g ? g.accepted_levels : null, myLevel, true) + '</section>' +
+      step(2, L('Características del juego', 'About the match'));
     if (!g) {
       if (sizes.length > 1) {
-        h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('¿Cuántos jugadores?', 'How many players?') + '</legend><div class="checks">' +
+        h += '<fieldset style="border:0;padding:0;margin:0"><legend class="f">' + L('¿Cuántos jugadores?', 'How many players?') + req() + '</legend><div class="checks">' +
           sizes.map((n) => '<label><input type="radio" name="capacity" value="' + n + '"' + (n === sizes[0] ? ' checked' : '') + '>' + n + (n === 2 ? ' (singles)' : L(' (dobles)', ' (doubles)')) + '</label>').join('') + '</div></fieldset>';
       }
       // Parten todos sin marcar (2026-11-15): se marcan los niveles de los rivales que se buscan.
-      h += '<fieldset style="border:0;padding:0;margin:0" aria-describedby="acc-hint"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + L('¿Con qué niveles quieres jugar?', 'Which levels do you want to play with?') + '</legend>' +
+      h += '<fieldset style="border:0;padding:0;margin:0" aria-describedby="acc-hint"><legend class="f">' + L('¿Con qué niveles quieres jugar?', 'Which levels do you want to play with?') + req() + '</legend>' +
         '<p id="acc-hint" class="small muted" style="margin:.15rem 0 .2rem">' + L('Marca uno o más niveles. Solo podrán sumarse jugadores de los niveles que marques.', 'Tick one or more levels. Only players of the levels you tick can join.') + '</p><div class="checks">' +
         sport.categories.map((c) => '<label title="' + esc(catLabel(c)) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '"' + (S.accepted && S.accepted.includes(c.level) ? ' checked' : '') + '>' + L('Nivel ', 'Level ') + c.level + '</label>').join('') + '</div></fieldset>';
     }
     h += choice('intent', L('¿Por qué juegas?', 'Why do you play?'), INTENTS, prefs.intent) +
-      '<p class="small muted" style="margin:.15rem 0 0">' + L('Tu rama, tu intención y tu nivel se muestran a los demás jugadores del partido.', 'Your division, intent and level are shown to the other players in the match.') + '</p>';
-    h += '<label class="f" for="email">' + L('Email de contacto', 'Contact email') + '</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="' + L('tu@correo.cl', 'you@email.com') + '" value="' + esc(prefs.email || '') + '">' +
+      '<p class="small muted" style="margin:.6rem 0 0">' + L('Tu rama, tu nivel y por qué juegas se muestran a los demás jugadores del partido.', 'Your division, level and why you play are shown to the other players in the match.') + '</p></section>';
+    h += step(3, L('Contacto', 'Contact')) + '<label class="f" for="email">' + L('Email de contacto', 'Contact email') + req() + '</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="' + L('tu@correo.cl', 'you@email.com') + '" value="' + esc(prefs.email || '') + '">' +
       (waField() ? '<label class="f" for="wa">WhatsApp <small>' + L('(opcional)', '(optional)') + '</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' : '') +
       (waField() && WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>' + L('Avísenme también por WhatsApp', 'Also notify me on WhatsApp') + '</label></div>' : '') +
       '<p class="small muted">' + L('Tu contacto solo se comparte con quienes jueguen contigo, cuando el partido se confirme.', 'Your contact details are only shared with the people playing with you, once the match is confirmed.') + '</p>' +
-      (lang === 'en' ? '<p class="small muted">We\'ll email you in English.</p>' : '') +
+      (lang === 'en' ? '<p class="small muted">We\'ll email you in English.</p>' : '') + '</section>' +
+      '<p class="small muted req-note"><span class="req" aria-hidden="true">*</span> ' + L('Indica un campo obligatorio.', 'Marks a required field.') + '</p>' +
       errBox() + '<div class="actions"><button class="btn block" type="submit"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? L('Enviando…', 'Sending…') : g ? L('Unirme al partido', 'Join the match') : L('Publicar partido', 'Post match')) + '</button></div></form>';
     return h;
   }
