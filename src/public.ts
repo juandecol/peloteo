@@ -143,6 +143,8 @@ export function publicRoutes(options: AppOptions = {}) {
       last_bookable: lastBookableDate(now),
       court_mode: mode(c),
       whatsapp_contact: settings.whatsapp_contact,
+      // Aviso de consentimiento de cookies (Configuración › Opciones), apagado por defecto.
+      cookie_consent: settings.cookie_consent,
       // Nombres de deportes en inglés (por nombre normalizado), para la interfaz en ENG.
       sport_names_en: SPORTS_EN,
     });

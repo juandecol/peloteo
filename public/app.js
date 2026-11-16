@@ -623,8 +623,12 @@
           L('<code>visitor_id</code>: un código al azar que reconoce tu navegador para mostrarte "Mis partidos". No dice quién eres.', '<code>visitor_id</code>: a random code that recognizes your browser to show "My matches". It does not identify you.'),
           L('<code>peloteo_lang</code>: el idioma que elegiste.', '<code>peloteo_lang</code>: the language you chose.'),
           L('<code>peloteo_intro</code>: recuerda si pediste no volver a ver la guía de bienvenida.', '<code>peloteo_intro</code>: remembers if you asked not to see the welcome guide again.'),
+        ].concat(consentOn() ? [
+          L('<code>peloteo_consent</code>: recuerda qué cookies opcionales aceptaste (analítica, publicidad), por 6 meses. Puedes cambiarlo con <button type="button" class="linkish" data-a="cookies">Configurar cookies</button>. Las cookies opcionales solo se activan si las aceptas.',
+            '<code>peloteo_consent</code>: remembers which optional cookies you accepted (analytics, advertising), for 6 months. You can change it with <button type="button" class="linkish" data-a="cookies">Cookie settings</button>. Optional cookies are only turned on if you accept them.'),
+        ] : []).concat([
           L('En el almacenamiento local de tu navegador guardamos tus iniciales, email, WhatsApp, rama, intención, nivel y último deporte, solo para no tener que escribirlos cada vez. Puedes borrarlos desde la configuración de tu navegador.', 'Your browser\'s local storage keeps your initials, email, WhatsApp, division, intent, level and last sport, only so you don\'t have to type them every time. You can clear them from your browser settings.'),
-        ])) +
+        ]))) +
       sec(L('Cuánto tiempo los guardamos', 'How long we keep it'),
         '<p>' + L('Tus datos de un partido se guardan mientras el partido exista. Si cancelas tu cupo, tus datos de ese partido se eliminan. Los partidos pasados se conservan como registro y la administración puede eliminarlos; también puedes pedir que borremos los tuyos.',
           'Your data for a match is kept while the match exists. If you cancel your spot, your data for that match is deleted. Past matches are kept as a record and the administrators can delete them; you can also ask us to delete yours.') + '</p>') +
@@ -693,7 +697,8 @@
   function footer() {
     const year = S.today ? S.today.date.slice(0, 4) : String(new Date().getFullYear());
     return '<span>peloteo.cl ' + year + '</span><a href="#terminos" data-a="go" data-v="terms">' + L('Términos y condiciones', 'Terms and conditions') + '</a>' +
-      '<a href="#privacidad" data-a="go" data-v="privacy">' + L('Políticas de Privacidad', 'Privacy Policy') + '</a>';
+      '<a href="#privacidad" data-a="go" data-v="privacy">' + L('Políticas de Privacidad', 'Privacy Policy') + '</a>' +
+      (consentOn() ? '<button type="button" class="linkish" data-a="cookies">' + L('Configurar cookies', 'Cookie settings') + '</button>' : '');
   }
 
   function view() {
@@ -746,6 +751,7 @@
       '<button type="button" data-a="go" data-v="mine" aria-current="' + (S.view === 'mine') + '">' + icon('mis', 18) + '<span class="lbl">' + both('Mis partidos', 'My matches') + '</span>' + (n ? '<b aria-label="' + n + L(' activos', ' active') + '">' + n + '</b>' : '') + '</button>' +
       '<a href="/admin/" class="navlink">' + icon('ajustes', 18) + '<span class="lbl">' + both('Configuración', 'Settings') + '</span></a></nav>';
     const foot = $('#foot'); if (foot) foot.innerHTML = footer();
+    consentRender();
   }
 
   // ---------------- formularios ----------------
@@ -836,6 +842,7 @@
     // Crear un partido desde un bloque del inicio, con el deporte elegido arriba.
     createIn() { const k = homeSport(); if (!k || !S.block) return; S.preset = { date: S.block.date, half: S.block.half }; S.fromBlock = false; chooseSport(k, homeVenue()); },
     intro() { openIntro(); },
+    cookies() { consentOpen(true); },
     lang(d) {
       if (d.l === lang) return;
       lang = d.l === 'en' ? 'en' : 'es'; saveLang(true); lastKey = ''; render();
@@ -1013,6 +1020,136 @@
     openIntro();
   }
 
+  // ---------------- consentimiento de cookies (2026-11-16) ----------------
+  // Preparado para cuando haya analítica o publicidad. Solo funciona si el administrador
+  // activa "Pedir el consentimiento de cookies" (Configuración › Opciones; llega en
+  // /api/today como cookie_consent). Apagado: no hay aviso y ninguna categoría opcional
+  // se activa. Encendido: aviso con "Aceptar todas", "Rechazar opcionales" y "Configurar"
+  // (necesarias siempre activas, analítica y publicidad). La elección se guarda en la
+  // cookie peloteo_consent (6 meses; después se vuelve a preguntar) y se cambia con
+  // "Configurar cookies" al pie de la página.
+  //
+  // Para cargar algo opcional, nunca directo: Peloteo.consent.whenAllowed('analytics', () => { ... })
+  // corre la función cuando (y si) esa categoría está aceptada. Si después la rechaza, se
+  // borran las cookies listadas en CONSENT_COOKIES de esa categoría y la página se recarga
+  // para descargar lo que estaba corriendo.
+  const CONSENT_COOKIE = 'peloteo_consent';
+  const CONSENT_VERSION = 1; // subirla si cambian las categorías: se vuelve a preguntar a todos
+  const CONSENT_MAX_AGE = 15552000; // 180 días
+  const CONSENT_CATS = ['analytics', 'marketing'];
+  // Cookies que deja cada categoría, para borrarlas si se retira el permiso (p. ej. '_ga').
+  const CONSENT_COOKIES = { analytics: [], marketing: [] };
+  const consentOn = () => !!(S.today && S.today.cookie_consent);
+  function consentRead() {
+    const m = /(?:^|;\s*)peloteo_consent=v(\d+)-a([01])-m([01])(?:;|$)/.exec(document.cookie);
+    if (!m || Number(m[1]) !== CONSENT_VERSION) return null;
+    return { analytics: m[2] === '1', marketing: m[3] === '1' };
+  }
+  let consent = null; // elección vigente (null: aún no decide)
+  const consentRan = new Set(); // categorías cuyo código ya se cargó en esta página
+  const consentWaiting = []; // [categoría, función] pendientes de permiso
+  const consentAllowed = (cat) => cat === 'necessary' || (consentOn() && !!consent && !!consent[cat]);
+  function consentFlush() {
+    for (let i = consentWaiting.length - 1; i >= 0; i--) {
+      const [cat, fn] = consentWaiting[i];
+      if (!consentAllowed(cat)) continue;
+      consentWaiting.splice(i, 1); consentRan.add(cat);
+      try { fn(); } catch (e) { /* un script opcional no debe romper el sitio */ }
+    }
+  }
+  function consentSave(choice) {
+    const before = consent;
+    consent = { analytics: !!choice.analytics, marketing: !!choice.marketing };
+    document.cookie = CONSENT_COOKIE + '=v' + CONSENT_VERSION + '-a' + (consent.analytics ? 1 : 0) + '-m' + (consent.marketing ? 1 : 0) +
+      '; Max-Age=' + CONSENT_MAX_AGE + '; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+    consentClose();
+    toast(L('Guardamos tus preferencias de cookies.', 'Your cookie preferences were saved.'));
+    try { window.dispatchEvent(new CustomEvent('peloteo:consent', { detail: Object.assign({}, consent) })); } catch (e) { /* navegador antiguo */ }
+    // Permiso retirado: se borran sus cookies y, si su código ya corría, se recarga.
+    const revoked = CONSENT_CATS.filter((c) => before && before[c] && !consent[c]);
+    if (revoked.length) {
+      const host = location.hostname, parent = host.split('.').slice(-2).join('.');
+      revoked.forEach((c) => CONSENT_COOKIES[c].forEach((name) => [host, '.' + parent, ''].forEach((d) => {
+        document.cookie = name + '=; Max-Age=0; Path=/' + (d ? '; Domain=' + d : '');
+      })));
+      if (revoked.some((c) => consentRan.has(c))) { setTimeout(() => location.reload(), 600); return; }
+    }
+    consentFlush();
+  }
+  let consentPanel = false; // false: aviso breve; true: configuración por categoría
+  function consentHtml() {
+    const privacy = '<a href="#privacidad" data-c="privacy">' + L('Políticas de Privacidad', 'Privacy Policy') + '</a>';
+    const actions = (extra) => '<div class="consent-actions">' + extra + '</div>';
+    if (!consentPanel) {
+      return '<h2 id="consent-t">' + L('Usamos cookies', 'We use cookies') + '</h2>' +
+        '<p id="consent-p">' + L('Usamos cookies necesarias para que el sitio funcione. Con tu permiso, también usaríamos cookies de analítica, para saber cómo se usa el sitio y mejorarlo, y de publicidad. Puedes aceptarlas, rechazarlas o elegir cuáles. Más detalles en nuestras ' + privacy + '.',
+          'We use necessary cookies to make the site work. With your permission, we would also use analytics cookies, to learn how the site is used and improve it, and advertising cookies. You can accept them, reject them or choose which ones. More details in our ' + privacy + '.') + '</p>' +
+        actions('<button type="button" class="btn sm" data-c="all">' + L('Aceptar todas', 'Accept all') + '</button>' +
+          '<button type="button" class="btn sm ghost" data-c="none">' + L('Rechazar opcionales', 'Reject optional') + '</button>' +
+          '<button type="button" class="btn sm ghost" data-c="panel">' + L('Configurar', 'Customize') + '</button>');
+    }
+    const cur = consent || { analytics: false, marketing: false };
+    const row = (cat, title, text, locked) => '<label class="consent-cat"><span><b>' + title + '</b><small>' + text + '</small></span>' +
+      '<input type="checkbox" role="switch" name="' + cat + '"' + (locked || cur[cat] ? ' checked' : '') + (locked ? ' disabled' : '') + '></label>';
+    return '<h2 id="consent-t">' + L('Configurar cookies', 'Cookie settings') + '</h2>' +
+      '<p id="consent-p">' + L('Elige qué cookies aceptas. Puedes cambiarlo cuando quieras con «Configurar cookies» al pie de la página.', 'Choose which cookies you accept. You can change it at any time with “Cookie settings” at the bottom of the page.') + '</p>' +
+      row('necessary', L('Necesarias', 'Necessary') + ' <span class="tag">' + L('Siempre activas', 'Always on') + '</span>',
+        L('Hacen funcionar el sitio: reconocer tu navegador para «Mis partidos», recordar tu idioma y esta elección. No se pueden desactivar.', 'Make the site work: recognizing your browser for “My matches”, remembering your language and this choice. They cannot be turned off.'), true) +
+      row('analytics', L('Analítica', 'Analytics'), L('Nos dicen, de forma agregada, cuántas personas visitan el sitio y qué páginas usan, para mejorarlo.', 'Tell us, in aggregate, how many people visit the site and which pages they use, so we can improve it.')) +
+      row('marketing', L('Publicidad', 'Advertising'), L('Permiten mostrar anuncios y medir su efecto, en este y otros sitios.', 'Allow showing ads and measuring their effect, on this and other sites.')) +
+      actions('<button type="button" class="btn sm" data-c="save">' + L('Guardar mi selección', 'Save my choice') + '</button>' +
+        '<button type="button" class="btn sm ghost" data-c="all">' + L('Aceptar todas', 'Accept all') + '</button>' +
+        '<button type="button" class="btn sm ghost" data-c="none">' + L('Rechazar opcionales', 'Reject optional') + '</button>') +
+      '<p class="small consent-more">' + privacy + '</p>';
+  }
+  function consentClose() { const el = document.getElementById('consent'); if (el) el.remove(); }
+  function consentOpen(panel) {
+    if (!consentOn()) return;
+    consentPanel = !!panel;
+    let el = document.getElementById('consent');
+    if (!el) {
+      el = document.createElement('section');
+      el.id = 'consent'; el.className = 'consent';
+      el.setAttribute('role', 'region'); el.setAttribute('aria-labelledby', 'consent-t'); el.setAttribute('aria-describedby', 'consent-p');
+      document.body.appendChild(el);
+      el.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-c]'); if (!b) return;
+        const a = b.dataset.c;
+        if (a === 'privacy') { e.preventDefault(); go('privacy'); return; }
+        if (a === 'all') consentSave({ analytics: true, marketing: true });
+        else if (a === 'none') consentSave({ analytics: false, marketing: false });
+        else if (a === 'panel') { consentPanel = true; consentRender(); const h = el.querySelector('#consent-t'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); } }
+        else if (a === 'save') consentSave({ analytics: el.querySelector('input[name="analytics"]').checked, marketing: el.querySelector('input[name="marketing"]').checked });
+      });
+    }
+    consentRender();
+    if (panel) { const h = el.querySelector('#consent-t'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); } }
+  }
+  // Redibuja el aviso abierto (por ejemplo, al cambiar de idioma) conservando las casillas marcadas.
+  function consentRender() {
+    const el = document.getElementById('consent'); if (!el) return;
+    const marks = {};
+    el.querySelectorAll('input[type="checkbox"]:not([disabled])').forEach((i) => { marks[i.name] = i.checked; });
+    el.innerHTML = consentHtml();
+    Object.keys(marks).forEach((k) => { const i = el.querySelector('input[name="' + k + '"]'); if (i) i.checked = marks[k]; });
+  }
+  function consentInit() {
+    consent = consentRead();
+    if (!consentOn()) return;
+    if (!consent) consentOpen(false); else consentFlush();
+  }
+  window.Peloteo = window.Peloteo || {};
+  window.Peloteo.consent = {
+    /** true si el administrador activó el aviso de cookies. */
+    enabled: consentOn,
+    /** true si la categoría ('necessary', 'analytics' o 'marketing') está permitida. */
+    allowed: consentAllowed,
+    /** Corre fn cuando la categoría esté permitida (ahora o cuando el visitante la acepte). */
+    whenAllowed(cat, fn) { consentWaiting.push([cat, fn]); consentFlush(); },
+    /** Abre la configuración de cookies. */
+    open: () => consentOpen(true),
+  };
+
   // ---------------- arranque ----------------
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-a]');
@@ -1078,6 +1215,7 @@
       $('#app').innerHTML = '<div class="card"><h2>' + L('No pudimos cargar las canchas', "We couldn't load the courts") + '</h2><p class="muted">' + L('Revisa tu conexión y vuelve a intentarlo.', 'Check your connection and try again.') + '</p><div class="actions"><button class="btn" onclick="location.reload()">' + L('Reintentar', 'Try again') + '</button></div></div>'; return; }
     S.today = today; todayLoadedAt = Date.now(); S.sports = sports || []; if (S.sports.length) await loadOpen(); else S.open = [];
     if (!fromHash()) { S.view = 'home'; render(); maybeIntro(); }
+    consentInit();
     await loadMine(); render();
   })();
   window.addEventListener('hashchange', () => { if (S.today) fromHash(); });

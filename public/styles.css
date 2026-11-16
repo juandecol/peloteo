@@ -486,3 +486,27 @@ legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
 #app:has(> .cta.week:last-child){padding-bottom:.75rem}
 /* Inicio: espacio entre la barra superior y el héroe a la mitad, de 16 px a 8 px (2026-11-16). */
 #app:has(> .hero:first-child){padding-top:.5rem}
+
+/* Aviso de consentimiento de cookies (2026-11-16): solo si el administrador lo activa. */
+.consent{position:fixed;z-index:50;left:50%;bottom:calc(.75rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  width:min(40rem,calc(100vw - 2rem));max-height:calc(100dvh - 1.5rem);overflow:auto;background:var(--surface);color:var(--ink);
+  border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.28);padding:1rem 1.1rem}
+.consent h2{margin:0 0 .4rem;font-size:1.05rem}
+.consent p{margin:0 0 .8rem;font-size:.92rem}
+.consent a{color:inherit}
+.consent-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+.consent-actions .btn{flex:1 1 auto}
+.consent-cat{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.65rem 0;border-top:1px solid var(--line);cursor:pointer}
+.consent-cat:last-of-type{margin-bottom:.8rem;border-bottom:1px solid var(--line)}
+.consent-cat b{display:block;font-size:.95rem}
+.consent-cat small{display:block;color:var(--muted);font-size:.85rem;margin-top:.15rem}
+.consent-cat input{appearance:none;-webkit-appearance:none;flex:none;width:2.6rem;height:1.5rem;border-radius:99px;background:var(--line);position:relative;cursor:pointer;margin:0;transition:background .15s}
+.consent-cat input::after{content:"";position:absolute;top:.2rem;left:.2rem;width:1.1rem;height:1.1rem;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.consent-cat input:checked{background:var(--court)}
+.consent-cat input:checked::after{transform:translateX(1.1rem)}
+.consent-cat input:disabled{opacity:.6;cursor:not-allowed}
+.consent-cat input:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+.consent-cat .tag{font-size:.7rem;font-weight:700;margin-left:.3rem;padding:.1rem .45rem;border-radius:99px;background:var(--soft);color:var(--muted);vertical-align:middle}
+.consent-more{margin:.7rem 0 0 !important}
+.linkish{background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
+@media (prefers-reduced-motion: reduce){.consent-cat input,.consent-cat input::after{transition:none}}

@@ -444,9 +444,12 @@
   function vOptions() {
     const st = S.settings;
     if (!st) return '<p class="muted">Cargando…</p>';
-    return '<div class="card"><h2>Formulario de los jugadores</h2><form data-f="settings" novalidate>' +
+    return '<div class="card"><form data-f="settings" novalidate><h2>Formulario de los jugadores</h2>' +
       '<div class="checks"><label><input type="checkbox" name="whatsapp_contact" value="1"' + (st.whatsapp_contact ? ' checked' : '') + '>Pedir el WhatsApp de los jugadores</label></div>' +
       '<p class="small muted">Si está activo, el formulario para abrir o unirse a un partido muestra un campo opcional de WhatsApp, y en los partidos confirmados los compañeros pueden escribirse por WhatsApp. Si está apagado, el campo no aparece y el número no se guarda.</p>' +
+      '<h2>Cookies</h2>' +
+      '<div class="checks"><label><input type="checkbox" name="cookie_consent" value="1"' + (st.cookie_consent ? ' checked' : '') + '>Pedir el consentimiento de cookies</label></div>' +
+      '<p class="small muted">Si está activo, el sitio muestra a cada visitante un aviso de cookies con «Aceptar todas», «Rechazar opcionales» y «Configurar» (necesarias, analítica y publicidad), y solo activa las categorías que acepte. Su elección se recuerda 6 meses y puede cambiarla con «Configurar cookies» al pie de la página. Si está apagado, no hay aviso y no se activa ninguna cookie opcional. Hoy el sitio no usa cookies opcionales: actívalo antes de agregar analítica o publicidad.</p>' +
       errBox() + '<div class="actions"><button class="btn" type="submit">Guardar opciones</button></div></form></div>';
   }
 
@@ -528,7 +531,7 @@
       await load(); render();
     },
     async settings(d) {
-      const r = await api('PUT', '/admin/api/settings', { whatsapp_contact: (d.whatsapp_contact || []).length > 0 });
+      const r = await api('PUT', '/admin/api/settings', { whatsapp_contact: (d.whatsapp_contact || []).length > 0, cookie_consent: (d.cookie_consent || []).length > 0 });
       if (!r.ok) { fail(r); return; }
       S.settings = r.data; S.err = ''; render(); toast('Opciones guardadas.');
     },

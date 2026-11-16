@@ -157,7 +157,7 @@ test("disponibilidad: resumen del mes y turnos del día", async () => {
   const today = (await a.req("GET", "/api/today")).json;
   // Sin COURT_MODE en el entorno, el modo es "reserva".
   const { sport_names_en, ...rest } = today;
-  assert.deepEqual(rest, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva", whatsapp_contact: false });
+  assert.deepEqual(rest, { date: "2026-11-16", minutes: 600, last_bookable: "2026-12-01", court_mode: "reserva", whatsapp_contact: false, cookie_consent: false });
   assert.equal(sport_names_en.tenis, "Tennis");
   const month = (await a.req("GET", "/api/availability?sport_id=D-TEN01&month=2026-11")).json;
   assert.equal(month.days[0].date, "2026-11-16");
@@ -402,6 +402,16 @@ test("opciones: el WhatsApp se pide solo si el administrador lo activa; si no, s
   const b = w.browser();
   await b.req("POST", `/api/games/${g.id}/join`, { player: player("RS", 3, { whatsapp: "+56 9 3333 4444" }) });
   assert.equal(w.db.get<{ whatsapp: string }>("SELECT whatsapp FROM players WHERE initials = 'RS'")!.whatsapp, "+56933334444");
+});
+
+test("opciones: el sitio pide el consentimiento de cookies solo si el administrador lo activa", async () => {
+  const w = world();
+  // Apagado por defecto: /today lo informa y el sitio no muestra el aviso.
+  assert.equal((await w.browser().req("GET", "/api/today")).json.cookie_consent, false);
+  w.db.exec("INSERT INTO settings (key, value) VALUES ('cookie_consent', '1')");
+  assert.equal((await w.browser().req("GET", "/api/today")).json.cookie_consent, true);
+  w.db.exec("UPDATE settings SET value = '0' WHERE key = 'cookie_consent'");
+  assert.equal((await w.browser().req("GET", "/api/today")).json.cookie_consent, false);
 });
 
 test("inicio: con ?sport= el resumen y la lista de un bloque muestran solo ese deporte", async () => {

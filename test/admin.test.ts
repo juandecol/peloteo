@@ -685,11 +685,23 @@ test("opciones: pedir WhatsApp se activa y desactiva desde Configuración; requi
   const anon = setup();
   assert.equal((await anon.req("GET", "/admin/api/settings")).status, 401);
   const t = await ready();
-  assert.deepEqual((await t.req("GET", "/admin/api/settings")).json, { whatsapp_contact: false });
-  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: true })).json, { whatsapp_contact: true });
+  assert.deepEqual((await t.req("GET", "/admin/api/settings")).json, { whatsapp_contact: false, cookie_consent: false });
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: true })).json, { whatsapp_contact: true, cookie_consent: false });
   // Valores inválidos se ignoran.
-  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: "si" })).json, { whatsapp_contact: true });
-  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: false })).json, { whatsapp_contact: false });
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: "si" })).json, { whatsapp_contact: true, cookie_consent: false });
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { whatsapp_contact: false })).json, { whatsapp_contact: false, cookie_consent: false });
+});
+
+test("opciones: el consentimiento de cookies parte apagado y se activa desde Configuración", async () => {
+  const t = await ready();
+  // Apagado por defecto (sin fila en settings).
+  assert.equal((await t.req("GET", "/admin/api/settings")).json.cookie_consent, false);
+  assert.equal(t.db.count("SELECT COUNT(*) AS n FROM settings WHERE key = 'cookie_consent'"), 0);
+  // Activarlo no cambia el otro ajuste; valores inválidos y claves desconocidas se ignoran.
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { cookie_consent: true })).json, { whatsapp_contact: false, cookie_consent: true });
+  assert.deepEqual((await t.req("PUT", "/admin/api/settings", { cookie_consent: 1, otra: true })).json, { whatsapp_contact: false, cookie_consent: true });
+  assert.equal(t.db.count("SELECT COUNT(*) AS n FROM settings WHERE key = 'otra'"), 0);
+  assert.equal((await t.req("PUT", "/admin/api/settings", { cookie_consent: false })).json.cookie_consent, false);
 });
 
 // ---------------------------------------------------------------
