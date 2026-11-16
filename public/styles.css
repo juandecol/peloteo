@@ -416,3 +416,6 @@ footer.site a:hover{color:var(--ink)}
 .legal ul{padding-left:1.2rem;margin:.3rem 0 .6rem}
 .legal li{margin:.25rem 0}
 .legal code{font-size:.85em;background:var(--soft);padding:0 .25rem;border-radius:4px}
+
+/* Aviso de responsabilidad de los partidos confirmados (2026-11-16). */
+.disclaimer{border-left:3px solid var(--ball);padding:.35rem 0 .35rem .7rem;margin:.8rem 0}

@@ -57,6 +57,8 @@ const player = (initials: string, extra: Record<string, unknown> = {}) => ({
   initials,
   level: 3,
   email: initials.toLowerCase() + "@example.com",
+  rama: "femenina",
+  intent: "salud",
   ...extra,
 });
 
@@ -101,6 +103,11 @@ test("avisos: publicado a quien abre; al completarse, confirmado a todos con can
   const mail = renderEmail(toMT.event, toMT.game.players.find((p) => p.id === toMT.player_id)!, toMT.game, SITE);
   assert.match(mail.subject, /^Partido confirmado: Tenis, martes 17 de noviembre a las 18:00$/);
   assert.match(mail.text, /Cancha: Cancha 1/);
+  // Aviso de responsabilidad (2026-11-16): Peloteo solo agenda; la reserva es de los jugadores.
+  assert.match(mail.text, /Peloteo solo agenda el encuentro entre los jugadores\..*reservar la cancha es responsabilidad de los jugadores.*no se hace responsable/s);
+  assert.match(mail.html, /Peloteo solo agenda el encuentro/);
+  // Rama e intención antes del nivel.
+  assert.match(mail.text, /RS \(rama femenina, juega por salud, nivel 3\)/);
   assert.match(mail.text, /rs@example\.com/); // contacto del compañero
   assert.ok(!mail.text.includes("mt@example.com")); // no su propio correo
   assert.match(mail.text, /#cancelar=[0-9a-f]{32}/);
@@ -124,7 +131,7 @@ test("avisos: pádel de 4, 'se sumó' a los que ya estaban mientras siga abierto
   );
   const s = w.sent[0]!;
   const mail = renderEmail(s.event, s.game.players[0]!, s.game, SITE);
-  assert.match(mail.text, /BB \(nivel 3\) se sumó a tu partido\. Todavía faltan 2 jugadores\./);
+  assert.match(mail.text, /BB \(rama femenina, juega por salud, nivel 3\) se sumó a tu partido\. Todavía faltan 2 jugadores\./);
   // Sin datos de contacto mientras no esté confirmado.
   assert.ok(!mail.text.includes("bb@example.com"));
 });

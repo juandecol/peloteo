@@ -17,7 +17,7 @@ const now = localNow(new Date("2026-11-16T13:00:00Z"));
 const DAY = "2026-11-17";
 const C = "coordinacion" as const;
 
-const me = (over: Partial<PlayerInput> = {}): PlayerInput => ({ initials: "MT", level: 3, email: "mt@example.com", ...over });
+const me = (over: Partial<PlayerInput> = {}): PlayerInput => ({ initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "diversion", ...over });
 const tenis = (over: Partial<CreateGameInput> = {}): CreateGameInput => ({
   sport_id: "D-TEN01",
   capacity: 2, // tenis admite singles (2) o dobles (4): migración 0008

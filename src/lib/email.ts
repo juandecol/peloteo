@@ -10,7 +10,16 @@
 import type { Channel, NoticeEvent, NoticeGame, NoticePlayer, SuggestedSlot } from "./notify.ts";
 import { parseIntList } from "./availability.ts";
 import { dayOfWeek } from "./time.ts";
-import { asLang, sportNameIn, type Lang } from "./i18n.ts";
+import { asLang, intentLabel, ramaLabel, sportNameIn, type Lang } from "./i18n.ts";
+
+/**
+ * Aviso de responsabilidad de los partidos confirmados (2026-11-16). El mismo texto va
+ * en la pantalla de confirmación y en "Mis partidos" (public/app.js).
+ */
+export const DISCLAIMER = {
+  es: "Peloteo solo agenda el encuentro entre los jugadores. Jugar queda sujeto a la disponibilidad del lugar, y reservar la cancha es responsabilidad de los jugadores: Peloteo no se hace responsable si no encuentran dónde jugar.",
+  en: "Peloteo only schedules the match between players. Playing is subject to the venue's availability, and booking the court is the players' responsibility: Peloteo is not responsible if you can't find a place to play.",
+};
 
 const RESEND_URL = "https://api.resend.com/emails";
 
@@ -154,7 +163,11 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
   const missing = Math.max(0, game.capacity - game.players.length);
   const falta = (n: number) => faltan(n, lang);
   const others = game.players.filter((p) => p.id !== player.id);
-  const nivel = (p: NoticePlayer) => `${p.initials} (${T("nivel", "level")} ${p.level})`;
+  // Rama e intención antes del nivel (2026-11-16); los cupos anteriores no las tienen.
+  const nivel = (p: NoticePlayer) =>
+    `${p.initials} (${[ramaLabel(p.rama, lang).toLowerCase(), intentLabel(p.intent, lang).toLowerCase(), `${T("nivel", "level")} ${p.level}`]
+      .filter(Boolean)
+      .join(", ")})`;
   const quienes = (ps: NoticePlayer[]) => ps.map(nivel).join(", ");
   const lugar = game.venue_name + (game.venue_address ? `, ${game.venue_address}` : "");
   const mapa = game.court_maps || game.venue_maps;
@@ -258,6 +271,7 @@ export function renderEmail(event: NoticeEvent, player: NoticePlayer, game: Noti
           ],
         },
         ...(mapa ? [{ button: [T("Cómo llegar", "Directions"), mapa] as [string, string] }] : []),
+        { p: T(DISCLAIMER.es, DISCLAIMER.en) },
         { h: T("Contacto de tus compañeros", "Your partners' contact details") },
         {
           list: others.map((p) => ({

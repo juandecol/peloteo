@@ -59,7 +59,18 @@
   const plural = (n, uno, varios) => (n === 1 ? '1 ' + uno : n + ' ' + varios);
   const faltan = (n) => (lang === 'en' ? (n === 1 ? '1 player needed' : n + ' players needed') : n === 1 ? 'falta 1 jugador' : 'faltan ' + n + ' jugadores');
   const levelsText = (ls) => (ls.length === 1 ? L('nivel ', 'level ') + ls[0] : ls.length === 5 ? L('todos los niveles', 'all levels') : L('niveles ', 'levels ') + ls.slice(0, -1).join(', ') + L(' y ', ' and ') + ls[ls.length - 1]);
-  const who = (players) => players.map((p) => esc(p.initials) + ' (' + L('nivel ', 'level ') + p.level + ')').join(', ');
+  // Rama e intención de juego (2026-11-16): informativas, se muestran antes del nivel.
+  const RAMAS = [['masculina', 'Masculina', "Men's"], ['femenina', 'Femenina', "Women's"]];
+  const INTENTS = [['diversion', 'Juego por diversión', 'I play for fun'], ['salud', 'Juego por salud', 'I play for health'], ['competitivo', 'Juego competitivamente', 'I play competitively']];
+  const ramaText = (r) => ({ masculina: L('rama masculina', "men's"), femenina: L('rama femenina', "women's") })[r] || '';
+  const intentText = (i) => ({ diversion: L('juega por diversión', 'plays for fun'), salud: L('juega por salud', 'plays for health'), competitivo: L('juega competitivamente', 'plays competitively') })[i] || '';
+  const who = (players) => players.map((p) => esc(p.initials) + ' (' + [ramaText(p.rama), intentText(p.intent), L('nivel ', 'level ') + p.level].filter(Boolean).join(', ') + ')').join(', ');
+  // Aviso de responsabilidad de los partidos confirmados (el mismo texto va en el correo, src/lib/email.ts).
+  const disclaimer = () => '<p class="small disclaimer">' + L('Peloteo solo agenda el encuentro entre los jugadores. Jugar queda sujeto a la disponibilidad del lugar, y reservar la cancha es responsabilidad de los jugadores: Peloteo no se hace responsable si no encuentran dónde jugar.',
+    "Peloteo only schedules the match between players. Playing is subject to the venue's availability, and booking the court is the players' responsibility: Peloteo is not responsible if you can't find a place to play.") + '</p>';
+  // Grupo de opciones de una sola elección (rama, intención), recordando la última usada.
+  const choice = (name, legend, opts, selected) => '<fieldset style="border:0;padding:0;margin:0"><legend class="f" style="font-weight:700;font-size:.9rem;margin-top:.9rem">' + legend + '</legend><div class="checks">' +
+    opts.map(([v, es, en]) => '<label><input type="radio" name="' + name + '" value="' + v + '"' + (selected === v ? ' checked' : '') + '>' + L(es, en) + '</label>').join('') + '</div></fieldset>';
   // Nombres de deportes en inglés (los entrega /api/today); los lugares no se traducen.
   const sportKeyOf = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
   const sportLabel = (name) => (lang === 'en' && S.today && S.today.sport_names_en && S.today.sport_names_en[sportKeyOf(name)]) || name;
@@ -352,6 +363,7 @@
       (g ? '' : '<p class="small muted">' + (coord() ? L('Cuando se complete, les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll share everyone's contact details so you can book the court with the club.") : L('La cancha se asigna cuando el partido se completa.', 'The court is assigned when the match fills up.')) + '</p>') + '</div>' +
       '<form data-f="play" novalidate>' +
       '<label class="f" for="ini">' + L('Tus iniciales', 'Your initials') + '</label><input id="ini" name="initials" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="JR" value="' + esc(prefs.initials || '') + '">' +
+      choice('rama', L('¿En qué rama juegas?', 'Which division do you play in?'), RAMAS, prefs.rama) +
       levelRadios(sport, g ? g.accepted_levels : null, myLevel);
     if (!g) {
       if (sizes.length > 1) {
@@ -363,6 +375,8 @@
         '<p id="acc-hint" class="small muted" style="margin:.15rem 0 .2rem">' + L('Marca uno o más niveles. Solo podrán sumarse jugadores de los niveles que marques.', 'Tick one or more levels. Only players of the levels you tick can join.') + '</p><div class="checks">' +
         sport.categories.map((c) => '<label title="' + esc(catLabel(c)) + '"><input type="checkbox" name="accepted_levels" value="' + c.level + '"' + (S.accepted && S.accepted.includes(c.level) ? ' checked' : '') + '>' + L('Nivel ', 'Level ') + c.level + '</label>').join('') + '</div></fieldset>';
     }
+    h += choice('intent', L('¿Por qué juegas?', 'Why do you play?'), INTENTS, prefs.intent) +
+      '<p class="small muted" style="margin:.15rem 0 0">' + L('Tu rama, tu intención y tu nivel se muestran a los demás jugadores del partido.', 'Your division, intent and level are shown to the other players in the match.') + '</p>';
     h += '<label class="f" for="email">' + L('Email de contacto', 'Contact email') + '</label><input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="' + L('tu@correo.cl', 'you@email.com') + '" value="' + esc(prefs.email || '') + '">' +
       (waField() ? '<label class="f" for="wa">WhatsApp <small>' + L('(opcional)', '(optional)') + '</small></label><input id="wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+56 9 1234 5678" value="' + esc(prefs.whatsapp || '') + '">' : '') +
       (waField() && WHATSAPP_NOTICES ? '<div class="checks" style="margin-top:.6rem"><label><input type="checkbox" name="whatsapp_opt_in" value="1"' + (prefs.whatsapp_opt_in ? ' checked' : '') + '>' + L('Avísenme también por WhatsApp', 'Also notify me on WhatsApp') + '</label></div>' : '') +
@@ -392,6 +406,7 @@
     if (map && g.status !== 'cancelado') h += '<p><a href="' + esc(map) + '" target="_blank" rel="noopener">' + L('Cómo llegar (Google Maps)', 'Directions (Google Maps)') + '</a></p>';
     if (g.status === 'sin_cancha') h += '<p class="small">' + L('El partido se completó, pero ya no quedan canchas libres a esa hora. Elige otro turno o cancela tu cupo.', 'The match filled up, but there are no free courts left at that time. Pick another time or cancel your spot.') + '</p>';
     if (g.status === 'cancelado') h += '<p class="small">' + L('El administrador canceló este partido.', 'The administrator cancelled this match.') + '</p>';
+    if (g.status === 'confirmado') h += disclaimer();
     const others = g.players.filter((p) => !p.me && p.email);
     if (others.length) {
       h += '<h3>' + L('Contacto de tus compañeros', "Your partners' contact details") + '</h3>' + others.map((p) => {
@@ -527,7 +542,7 @@
   // Página del sitio (#privacidad), en español e inglés. Si cambia qué datos se
   // guardan o con quién se comparten, actualizar este texto y su fecha.
   const PRIVACY_CONTACT = 'contacto@peloteo.cl';
-  const PRIVACY_UPDATED = { es: '15 de noviembre de 2026', en: 'November 15, 2026' };
+  const PRIVACY_UPDATED = { es: '16 de noviembre de 2026', en: 'November 16, 2026' };
   function vPrivacy() {
     const mail = '<a href="mailto:' + PRIVACY_CONTACT + '">' + PRIVACY_CONTACT + '</a>';
     const sec = (title, body) => '<h2>' + title + '</h2>' + body;
@@ -538,13 +553,13 @@
       '<p>' + L('Peloteo (peloteo.cl) ayuda a que jugadores se pongan de acuerdo para jugar. Para eso pedimos muy pocos datos y los usamos solo para organizar tus partidos. Aquí te contamos cuáles, para qué y qué puedes hacer con ellos.',
         'Peloteo (peloteo.cl) helps players agree on a time to play. To do that we ask for very little data and use it only to organize your matches. Here is what we collect, why, and what you can do about it.') + '</p>' +
       sec(L('Qué datos pedimos', 'What we collect'), ul([
-        L('<b>Iniciales y nivel de juego</b>, para mostrar quién juega en cada partido.', '<b>Initials and playing level</b>, to show who plays in each match.'),
+        L('<b>Iniciales, rama (masculina o femenina), intención de juego y nivel</b>, para mostrar quién juega en cada partido.', "<b>Initials, division (men's or women's), why you play and playing level</b>, to show who plays in each match."),
         L('<b>Email</b>, para enviarte los avisos de tus partidos.', '<b>Email</b>, to send you notices about your matches.'),
         L('<b>WhatsApp</b> (opcional, solo si el sitio lo pide), para que tus compañeros puedan escribirte.', '<b>WhatsApp</b> (optional, only if the site asks for it), so your partners can message you.'),
         L('Los partidos en que te anotas: deporte, lugar, día, hora y niveles que buscas.', 'The matches you sign up for: sport, venue, day, time and the levels you are looking for.'),
       ]) + '<p>' + L('No pedimos tu nombre, contraseña, dirección ni datos de pago.', "We don't ask for your name, a password, your address or payment details.") + '</p>') +
       sec(L('Quién ve tus datos', 'Who sees your data'), ul([
-        L('<b>Cualquier visitante</b> ve solo tus iniciales y tu nivel en los partidos abiertos.', '<b>Any visitor</b> only sees your initials and level in open matches.'),
+        L('<b>Cualquier visitante</b> ve solo tus iniciales, tu rama, tu intención de juego y tu nivel en los partidos abiertos.', '<b>Any visitor</b> only sees your initials, division, why you play and level in open matches.'),
         L('<b>Tus compañeros</b> ven tu email (y tu WhatsApp, si lo diste) solo cuando el partido se confirma, para que se pongan de acuerdo.', '<b>Your partners</b> see your email (and WhatsApp, if you gave it) only once the match is confirmed, so you can get in touch.'),
         L('<b>La administración del sitio</b> puede ver los datos de los partidos para gestionarlos.', '<b>The site administrators</b> can see match data in order to manage matches.'),
       ]) + '<p>' + L('No vendemos ni compartimos tus datos con fines publicitarios.', "We don't sell your data or share it for advertising.") + '</p>') +
@@ -558,7 +573,7 @@
           L('<code>visitor_id</code>: un código al azar que reconoce tu navegador para mostrarte "Mis partidos". No dice quién eres.', '<code>visitor_id</code>: a random code that recognizes your browser to show "My matches". It does not identify you.'),
           L('<code>peloteo_lang</code>: el idioma que elegiste.', '<code>peloteo_lang</code>: the language you chose.'),
           L('<code>peloteo_intro</code>: recuerda si pediste no volver a ver la guía de bienvenida.', '<code>peloteo_intro</code>: remembers if you asked not to see the welcome guide again.'),
-          L('En el almacenamiento local de tu navegador guardamos tus iniciales, email, WhatsApp, nivel y último deporte, solo para no tener que escribirlos cada vez. Puedes borrarlos desde la configuración de tu navegador.', 'Your browser\'s local storage keeps your initials, email, WhatsApp, level and last sport, only so you don\'t have to type them every time. You can clear them from your browser settings.'),
+          L('En el almacenamiento local de tu navegador guardamos tus iniciales, email, WhatsApp, rama, intención, nivel y último deporte, solo para no tener que escribirlos cada vez. Puedes borrarlos desde la configuración de tu navegador.', 'Your browser\'s local storage keeps your initials, email, WhatsApp, division, intent, level and last sport, only so you don\'t have to type them every time. You can clear them from your browser settings.'),
         ])) +
       sec(L('Cuánto tiempo los guardamos', 'How long we keep it'),
         '<p>' + L('Tus datos de un partido se guardan mientras el partido exista. Si cancelas tu cupo, tus datos de ese partido se eliminan. Los partidos pasados se conservan como registro y la administración puede eliminarlos; también puedes pedir que borremos los tuyos.',
@@ -646,20 +661,25 @@
     const level = Number(d.level) || 0;
     const ini = (d.initials || '').toUpperCase().replace(/[^A-ZÑÁÉÍÓÚÜ]/g, '');
     S.err = ini.length < 2 || ini.length > 4 ? L('Escribe tus iniciales (2 a 4 letras).', 'Enter your initials (2 to 4 letters).')
+      : !d.rama ? L('Elige tu rama: masculina o femenina.', "Choose your division: men's or women's.")
       : !level ? L('Elige tu nivel de juego.', 'Choose your playing level.')
+      : !d.intent ? L('Elige por qué juegas: diversión, salud o competitivo.', 'Choose why you play: fun, health or competitive.')
       : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((d.email || '').trim()) ? L('Revisa el email: lo usamos para avisarte.', 'Check your email address: we use it to keep you posted.')
       : (d.whatsapp && d.whatsapp.replace(/\D/g, '').length < 8) ? L('Revisa el número de WhatsApp o déjalo en blanco.', 'Check the WhatsApp number or leave it blank.')
       : (!S.game && !(d.accepted_levels || []).length) ? L('Elige al menos un nivel de jugador.', 'Choose at least one player level.') : '';
     // Los niveles marcados se conservan si el formulario se vuelve a dibujar con un error.
     if (!S.game) S.accepted = (d.accepted_levels || []).map(Number);
-    if (S.err) { S.field = S.field || (/nivel de jugador|player level/.test(S.err) ? 'accepted_levels' : ''); render(); return; }
+    if (S.err) {
+      S.field = S.field || (/nivel de jugador|player level/.test(S.err) ? 'accepted_levels' : /rama|division/.test(S.err) ? 'rama' : /por qué juegas|why you play/.test(S.err) ? 'intent' : '');
+      render(); return;
+    }
 
     const key = 'lvl_' + sport.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    prefs = Object.assign({}, prefs, { initials: ini, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : prefs.whatsapp || '', whatsapp_opt_in: !!d.whatsapp_opt_in });
+    prefs = Object.assign({}, prefs, { initials: ini, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : prefs.whatsapp || '', whatsapp_opt_in: !!d.whatsapp_opt_in, rama: d.rama, intent: d.intent });
     prefs[key] = level;
     LS.set('peloteo_prefs', prefs);
 
-    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in, lang };
+    const player = { initials: ini, level, email: d.email.trim(), whatsapp: waField() ? d.whatsapp || '' : '', whatsapp_opt_in: waField() && WHATSAPP_NOTICES && !!d.whatsapp_opt_in, lang, rama: d.rama, intent: d.intent };
     S.busy = true; S.err = ''; render();
     const r = S.game
       ? await api('POST', '/api/games/' + encodeURIComponent(S.game.id) + '/join', { player })

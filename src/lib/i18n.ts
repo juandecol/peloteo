@@ -53,6 +53,8 @@ export function sportNameIn(name: string, lang: Lang): string {
 export const ERRORS_EN: Record<string, string> = {
   "Escribe tus iniciales (2 a 4 letras).": "Enter your initials (2 to 4 letters).",
   "Elige tu nivel de juego.": "Choose your playing level.",
+  "Elige tu rama: masculina o femenina.": "Choose your division: men's or women's.",
+  "Elige por qué juegas: diversión, salud o competitivo.": "Choose why you play: fun, health or competitive.",
   "Revisa el email: lo usamos para avisarte.": "Check your email address: we use it to keep you posted.",
   "Revisa el número de WhatsApp o déjalo en blanco.": "Check the WhatsApp number or leave it blank.",
   "Elige cuántos jugadores serán.": "Choose how many players there will be.",
@@ -106,3 +108,26 @@ export function translateError(message: string, lang: Lang): string {
   }
   return message;
 }
+
+// ---------------------------------------------------------------
+// Rama e intención de juego (2026-11-16): informativas, se muestran antes del nivel.
+// ---------------------------------------------------------------
+export const RAMAS = ["masculina", "femenina"] as const;
+export type Rama = (typeof RAMAS)[number];
+export const INTENTS = ["diversion", "salud", "competitivo"] as const;
+export type Intent = (typeof INTENTS)[number];
+
+const RAMA_LABEL: Record<Rama, [string, string]> = {
+  masculina: ["Rama masculina", "Men's"],
+  femenina: ["Rama femenina", "Women's"],
+};
+const INTENT_LABEL: Record<Intent, [string, string]> = {
+  diversion: ["Juega por diversión", "Plays for fun"],
+  salud: ["Juega por salud", "Plays for health"],
+  competitivo: ["Juega competitivamente", "Plays competitively"],
+};
+
+export const ramaLabel = (r: unknown, lang: Lang = "es"): string =>
+  (RAMAS as readonly unknown[]).includes(r) ? RAMA_LABEL[r as Rama][lang === "en" ? 1 : 0] : "";
+export const intentLabel = (i: unknown, lang: Lang = "es"): string =>
+  (INTENTS as readonly unknown[]).includes(i) ? INTENT_LABEL[i as Intent][lang === "en" ? 1 : 0] : "";

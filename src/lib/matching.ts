@@ -21,7 +21,7 @@ import {
 } from "./availability.ts";
 import type { PendingNotice } from "./notify.ts";
 import { asWho, ownsParams, ownsSql, type Who } from "./identity.ts";
-import { asLang, type Lang } from "./i18n.ts";
+import { asLang, type Lang, RAMAS, INTENTS, type Rama, type Intent } from "./i18n.ts";
 import { isUniqueViolation, newId, newToken, placeholders, type Db, type DbStatement } from "./db.ts";
 import {
   canStillCancel,
@@ -77,6 +77,10 @@ export interface PlayerInput {
   whatsapp_opt_in?: unknown;
   /** "en" para recibir los correos en inglés; cualquier otro valor, español. */
   lang?: unknown;
+  /** "masculina" o "femenina" (obligatoria, informativa). */
+  rama?: unknown;
+  /** "diversion", "salud" o "competitivo" (obligatoria, informativa). */
+  intent?: unknown;
 }
 
 export interface ValidPlayer {
@@ -87,6 +91,8 @@ export interface ValidPlayer {
   whatsapp_opt_in: 0 | 1;
   /** Idioma de los correos de este cupo. */
   lang: Lang;
+  rama: Rama;
+  intent: Intent;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -98,6 +104,12 @@ export function validatePlayer(input: PlayerInput, allowedLevels: number[]): Val
   if (initials.length < 2 || initials.length > 4) {
     throw new MatchError("datos_invalidos", "Escribe tus iniciales (2 a 4 letras).", "initials");
   }
+
+  // Rama e intención (2026-11-16): obligatorias, solo informativas. La rama va antes del nivel.
+  if (!(RAMAS as readonly unknown[]).includes(input.rama)) {
+    throw new MatchError("datos_invalidos", "Elige tu rama: masculina o femenina.", "rama");
+  }
+  const rama = input.rama as Rama;
 
   const level = Number(input.level);
   if (!Number.isInteger(level) || !allowedLevels.includes(level)) {
@@ -123,8 +135,13 @@ export function validatePlayer(input: PlayerInput, allowedLevels: number[]): Val
     whatsapp = "+" + digits;
   }
 
+  if (!(INTENTS as readonly unknown[]).includes(input.intent)) {
+    throw new MatchError("datos_invalidos", "Elige por qué juegas: diversión, salud o competitivo.", "intent");
+  }
+  const intent = input.intent as Intent;
+
   const optIn = whatsapp !== null && (input.whatsapp_opt_in === true || input.whatsapp_opt_in === 1);
-  return { initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0, lang: asLang(input.lang) };
+  return { initials, level, email, whatsapp, whatsapp_opt_in: optIn ? 1 : 0, lang: asLang(input.lang), rama, intent };
 }
 
 /** Cantidad de jugadores elegida: debe ser una de las permitidas por el deporte. */
@@ -291,11 +308,11 @@ function insertPlayer(
   return db
     .prepare(
       `INSERT INTO players
-         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
+         (id, game_id, visitor_id, user_id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang, rama, intent)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${condition}`,
     )
     .bind(
-      id, gameId, who.visitorId, who.userId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token, p.lang,
+      id, gameId, who.visitorId, who.userId, p.initials, p.level, p.email, p.whatsapp, p.whatsapp_opt_in, token, p.lang, p.rama, p.intent,
       ...conditionParams,
     );
 }

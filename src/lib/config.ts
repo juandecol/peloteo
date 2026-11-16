@@ -137,6 +137,8 @@ export interface Venue {
   name: string;
   address: string;
   maps_url: string;
+  /** Dirección para reservar la cancha en línea (opcional; 2026-11-16, aún no se muestra en el sitio). */
+  booking_url: string;
   sports: number;
   courts: number;
 }
@@ -144,7 +146,7 @@ export interface Venue {
 export async function listVenues(db: Db): Promise<Venue[]> {
   const { results } = await db
     .prepare(
-      `SELECT v.id, v.name, v.address, v.maps_url,
+      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url,
               (SELECT count(*) FROM sports s WHERE s.venue_id = v.id AND s.deleted_at IS NULL) AS sports,
               (SELECT count(*) FROM courts c WHERE c.venue_id = v.id AND c.deleted_at IS NULL) AS courts
        FROM venues v WHERE v.deleted_at IS NULL ORDER BY v.name, v.id`,
@@ -164,22 +166,23 @@ function validateVenue(input: Record<string, unknown>) {
     name: requiredText(input.name, 80, "name", "el nombre del lugar"),
     address: optionalText(input.address, 160, "address"),
     maps_url: optionalUrl(input.maps_url, "maps_url"),
+    booking_url: optionalUrl(input.booking_url, "booking_url"),
   };
 }
 
 export async function createVenue(db: Db, input: Record<string, unknown>): Promise<Venue> {
   const v = validateVenue(input);
   const id = newId("L");
-  await db.prepare("INSERT INTO venues (id, name, address, maps_url) VALUES (?, ?, ?, ?)")
-    .bind(id, v.name, v.address, v.maps_url).run();
+  await db.prepare("INSERT INTO venues (id, name, address, maps_url, booking_url) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, v.name, v.address, v.maps_url, v.booking_url).run();
   return getVenue(db, id);
 }
 
 export async function updateVenue(db: Db, id: string, input: Record<string, unknown>): Promise<Venue> {
   const v = validateVenue(input);
   const r = await db
-    .prepare("UPDATE venues SET name = ?, address = ?, maps_url = ? WHERE id = ? AND deleted_at IS NULL")
-    .bind(v.name, v.address, v.maps_url, id)
+    .prepare("UPDATE venues SET name = ?, address = ?, maps_url = ?, booking_url = ? WHERE id = ? AND deleted_at IS NULL")
+    .bind(v.name, v.address, v.maps_url, v.booking_url, id)
     .run();
   if (r.meta.changes === 0) throw new ConfigError("no_existe", "Ese lugar ya no existe.");
   return getVenue(db, id);
@@ -583,7 +586,7 @@ export interface AdminGame {
   venue_name: string;
   sport_name: string;
   court_name: string | null;
-  players: { initials: string; level: number; email: string; whatsapp: string | null }[];
+  players: { initials: string; level: number; rama: string | null; intent: string | null; email: string; whatsapp: string | null }[];
 }
 
 /** Encuentros desde una fecha (por defecto, hoy), incluidos los cancelados. */
@@ -606,17 +609,17 @@ export async function listGames(db: Db, now: LocalNow, from?: unknown): Promise<
   if (results.length === 0) return [];
   const { results: players } = await db
     .prepare(
-      `SELECT game_id, initials, level, email, whatsapp FROM players
+      `SELECT game_id, initials, level, rama, intent, email, whatsapp FROM players
        WHERE game_id IN (${placeholders(results.length)}) ORDER BY rowid`,
     )
     .bind(...results.map((g) => g.id))
-    .all<{ game_id: string; initials: string; level: number; email: string; whatsapp: string | null }>();
+    .all<{ game_id: string; initials: string; level: number; rama: string | null; intent: string | null; email: string; whatsapp: string | null }>();
   return results.map((g) => ({
     ...g,
     accepted_levels: parseIntList(g.accepted_levels, 1, 5),
     players: players
       .filter((p) => p.game_id === g.id)
-      .map(({ initials, level, email, whatsapp }) => ({ initials, level, email, whatsapp })),
+      .map(({ initials, level, rama, intent, email, whatsapp }) => ({ initials, level, rama, intent, email, whatsapp })),
   }));
 }
 

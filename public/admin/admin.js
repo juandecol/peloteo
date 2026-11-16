@@ -178,6 +178,8 @@
       '<label class="f" for="vn">Nombre del lugar</label><input id="vn" name="name" type="text" maxlength="80" placeholder="Country Club Santa Martina" value="' + esc(ve ? ve.name : '') + '" required>' +
       '<label class="f" for="va">Dirección o comuna</label><input id="va" name="address" type="text" maxlength="160" value="' + esc(ve ? ve.address : '') + '">' +
       '<label class="f" for="vm">Enlace de Google Maps <small>(opcional)</small></label><input id="vm" name="maps_url" type="url" inputmode="url" placeholder="https://maps.app.goo.gl/..." value="' + esc(ve ? ve.maps_url : '') + '">' +
+      '<label class="f" for="vb">Enlace para reservar en línea <small>(opcional)</small></label><input id="vb" name="booking_url" type="url" inputmode="url" placeholder="https://..." value="' + esc(ve ? ve.booking_url || '' : '') + '" aria-describedby="vb-h">' +
+      '<p id="vb-h" class="small muted">Página del club donde se reserva la cancha. Por ahora solo se guarda; más adelante se mostrará a los jugadores.</p>' +
       errBox() + affectedBox('delConfirm') + '<div class="actions"><button class="btn" type="submit">Guardar lugar</button>' + (ve ? delBtn('venue', 'Eliminar lugar') : '') + '</div></form>';
   }
 
@@ -187,6 +189,7 @@
     let h = crumbs([{ t: 'Lugares', go: 'venues' }, { t: ve.name }]) +
       '<div class="card"><h2>' + esc(ve.name) + '</h2><p class="id">ID ' + esc(ve.id) + '</p><p>' + esc(ve.address || 'Sin dirección') + '</p>' +
       (ve.maps_url ? '<p><a href="' + esc(ve.maps_url) + '" target="_blank" rel="noopener">Ver en Google Maps</a></p>' : '') +
+      (ve.booking_url ? '<p><a href="' + esc(ve.booking_url) + '" target="_blank" rel="noopener">Reservar en línea</a></p>' : '') +
       '<div class="actions"><button type="button" class="btn ghost sm" data-a="go" data-v="venueForm">Editar lugar</button></div></div><h3>Deportes en este lugar</h3>';
     h += S.sports.length ? '<ul class="list">' + S.sports.map((s) => {
       const nc = s.categories.filter(Boolean).length;
@@ -305,7 +308,7 @@
       return '<div class="card"><p>' + tag + ' <span class="id">ID ' + esc(g.id) + '</span></p><h3>' + cap(fecha(g.date)) + ', ' + g.time + '</h3>' +
         '<p>' + esc(g.sport_name) + ' en ' + esc(g.venue_name) + (g.court_name ? ', ' + esc(g.court_name) : ', sin cancha asignada') + '</p>' +
         '<p class="small muted">' + g.capacity + ' jugadores · acepta ' + (g.accepted_levels.length === 1 ? 'nivel ' : 'niveles ') + g.accepted_levels.join(', ') + '</p>' +
-        g.players.map((p) => '<p class="small">' + esc(p.initials) + ', nivel ' + p.level + ', <a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' + (p.whatsapp ? ', ' + esc(p.whatsapp) : '') + '</p>').join('') +
+        g.players.map((p) => '<p class="small">' + esc(p.initials) + (p.rama ? ', rama ' + p.rama : '') + (p.intent ? ', ' + ({ diversion: 'por diversión', salud: 'por salud', competitivo: 'competitivo' })[p.intent] : '') + ', nivel ' + p.level + ', <a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' + (p.whatsapp ? ', ' + esc(p.whatsapp) : '') + '</p>').join('') +
         (g.status !== 'cancelado' ? '<div class="actions"><button type="button" class="btn danger sm" data-a="cancelGame" data-id="' + esc(g.id) + '">' + (S.confirm === key ? 'Toca de nuevo para cancelar' : 'Cancelar encuentro') + '</button></div>' : '') + '</div>';
     }).join('') + vWipe();
   }

@@ -52,6 +52,15 @@ test("migración 0012: los deportes existentes quedan con orden 0 y el orden va 
   assert.throws(() => db.exec("UPDATE sports SET sort_order = 1000 WHERE id = 'D-TEN01'"), /CHECK constraint failed/);
 });
 
+test("migración 0013: cupos anteriores sin rama ni intención; solo valores de la lista; lugares sin enlace de reservas", () => {
+  const db = new TestDb();
+  assert.equal(db.count("SELECT count(*) AS n FROM players WHERE rama IS NOT NULL OR intent IS NOT NULL"), 0);
+  assert.equal(db.count("SELECT count(*) AS n FROM venues WHERE booking_url <> ''"), 0);
+  db.exec("UPDATE players SET rama = 'femenina', intent = 'competitivo'");
+  assert.throws(() => db.exec("UPDATE players SET rama = 'mixta'"), /CHECK constraint failed/);
+  assert.throws(() => db.exec("UPDATE players SET intent = 'ganar'"), /CHECK constraint failed/);
+});
+
 test("migración 0002: borrar un encuentro sigue borrando sus jugadores en cascada", () => {
   const db = new TestDb();
   db.exec("DELETE FROM games WHERE id = 'E-DEMO3'");

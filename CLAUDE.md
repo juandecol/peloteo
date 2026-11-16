@@ -33,7 +33,7 @@ referencia/     prototipo aprobado
 
 Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), generados en el servidor. Fechas como `YYYY-MM-DD` y horas como `HH:MM`, siempre en hora local de Chile.
 
-**venues** (lugares): `id`, `name`, `address`, `maps_url`, `created_at`.
+**venues** (lugares): `id`, `name`, `address`, `maps_url`, `booking_url` (enlace para reservar la cancha en línea, opcional; migración `0013`: por ahora solo se edita en el admin y no se muestra a los jugadores), `created_at`.
 
 **sports** (deporte dentro de un lugar): `id`, `venue_id`, `name`, `match_sizes` (cantidades de jugadores permitidas: `"2"`, `"4"` o `"2,4"`; tenis y pádel `"2,4"`: singles o dobles, migración `0008`), `visible` (1/0, migración `0010`: si se ofrece a los jugadores; por defecto sí), `sort_order` (entero de 0 a 999, migración `0012`: orden en el selector; por defecto 0), `created_at`. En la interfaz pública los deportes de distintos lugares se agrupan por nombre normalizado (sin tildes ni mayúsculas).
 
@@ -46,7 +46,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - Restricción única sobre (`court_id`, `date`, `time`) solo para encuentros `confirmado`: es la defensa contra la doble reserva.
 - El estado `cancelado` lo asigna solo el administrador (ver Administrador).
 
-**players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `lang` (`es` o `en`, idioma de sus correos; migración `0011`), `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
+**players** (cupos de un encuentro): `id`, `game_id`, `visitor_id`, `initials`, `level`, `email`, `whatsapp` (opcional), `whatsapp_opt_in`, `cancel_token`, `lang` (`es` o `en`, idioma de sus correos; migración `0011`), `rama` (`masculina` o `femenina`) e `intent` (`diversion`, `salud` o `competitivo`) (migración `0013`; nulos en cupos anteriores), `created_at`. Un visitante no puede ocupar dos cupos del mismo encuentro.
 
 **admins**: `id`, `username`, `password_hash`, `password_salt`, `totp_secret` (nulo), `totp_enabled` (falso), `totp_last_step` (último paso TOTP aceptado, migración `0005`), `must_change_password`.
 
@@ -82,6 +82,7 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Anticipación:** se puede agendar desde hoy hasta 15 días por adelantado (hoy + 15). Fechas fuera de ese rango no se muestran ni se aceptan.
 - **Cancha libre:** una cancha está libre en un turno si genera ese turno y no tiene un encuentro `confirmado` a esa hora. Los encuentros abiertos no ocupan cancha.
 - **Abrir partido:** el jugador elige deporte, lugar, día y hora; ingresa iniciales (2 a 4 letras), nivel y email; elige cuántos jugadores serán (una de las `match_sizes` del deporte; si hay una sola, se usa esa) y qué niveles acepta (al menos uno, entre las categorías del deporte; desde el 2026-11-15 no tiene que incluir el suyo: elige el nivel de sus rivales). Solo se puede abrir si en ese momento queda al menos una cancha libre en el turno. El encuentro queda `abierto`, sin cancha asignada.
+- **Rama e intención de juego (2026-11-16):** al abrir o unirse, el jugador elige su rama (masculina o femenina, antes del nivel) y por qué juega ("Juego por diversión", "Juego por salud" o "Juego competitivamente", antes del email). Ambas obligatorias y solo informativas: no limitan quién se une (puede haber partidos mixtos). Se muestran junto a cada jugador, antes del nivel: "QA (rama femenina, juega competitivamente, nivel 3)", en el sitio, en los correos y en el admin. Los cupos anteriores no las tienen y no muestran nada.
 - **Unirse:** otro jugador puede sumarse a un encuentro `abierto` si su nivel está entre los `accepted_levels`. Al completarse `capacity` se asigna, en la misma operación, la primera cancha libre del turno (por nombre y luego ID) y el encuentro pasa a `confirmado`; se avisa a todos.
 - **Sin cancha:** si al completarse ya no queda cancha libre, el encuentro no se confirma: pasa a `sin_cancha` (completo, sin cancha, no admite más jugadores), se avisa a los jugadores y se les ofrecen otros turnos.
 - **Búsqueda:** por deporte, lugar, rango de fechas, rango de horas y el nivel del jugador. Devuelve solo encuentros a los que ese jugador puede unirse: `abierto`, con cupo, turno vigente, su nivel entre los aceptados y sin estar ya inscrito.
@@ -89,13 +90,14 @@ Todos los ID son texto corto único con prefijo (`L-`, `D-`, `C-`, `E-`), genera
 - **Bloqueos:** el administrador puede bloquear una cancha en una fecha y un rango de horas, con un motivo opcional (por ejemplo, una reserva hecha por otro canal). Un turno de esa cancha que se cruce con el bloqueo, aunque sea en parte, no se ofrece ni se asigna: la cancha no cuenta como libre ni para abrir partido ni al confirmarse. Si al crear el bloqueo ya hay un encuentro confirmado en esa cancha cuyo turno se cruza, el sistema advierte y pide confirmación; si se confirma, el encuentro pasa a `cancelado` y se avisa a sus jugadores (el aviso real llega en la etapa 5). Los encuentros abiertos no tienen cancha y no se ven afectados al crear el bloqueo.
 - **Cancelación por el administrador:** el administrador puede cancelar cualquier encuentro en cualquier momento. El encuentro no se borra: pasa a `cancelado`, la cancha queda libre y se avisa a sus jugadores.
 - **Concurrencia:** crear y unirse deben validarse en el servidor dentro de una sola operación. Si el turno ya se ocupó, responder con un error claro para que la interfaz ofrezca otra hora.
-- **Privacidad:** el contacto de un jugador solo se entrega a quienes comparten con él un encuentro confirmado. Las respuestas públicas solo incluyen iniciales y nivel.
+- **Privacidad:** el contacto de un jugador solo se entrega a quienes comparten con él un encuentro confirmado. Las respuestas públicas solo incluyen iniciales, rama, intención y nivel.
+- **Aviso de responsabilidad (2026-11-16):** todo partido confirmado dice, en la pantalla (confirmación y "Mis partidos") y en el correo "partido confirmado", que Peloteo solo agenda el encuentro, que jugar queda sujeto a la disponibilidad del lugar, que reservar la cancha es responsabilidad de los jugadores y que Peloteo no se hace responsable si no encuentran dónde jugar (`DISCLAIMER` en `src/lib/email.ts` y `disclaimer()` en `public/app.js`, mismo texto).
 
 ## Jugadores sin registro
 
 - Cookie `visitor_id` aleatoria (`V-` + 32 caracteres hex), de 400 días (el máximo que aceptan los navegadores), `HttpOnly`, `Secure`, `SameSite=Lax`, creada por el servidor en la primera llamada a `/api`. Una cookie con formato inválido se reemplaza.
 - "Mis partidos" lista los encuentros de esa cookie de hoy en adelante, incluidos los cancelados por el administrador. Muestra el contacto de los compañeros solo si el encuentro está confirmado, y el botón de cancelar solo mientras falte al menos 1 hora.
-- El navegador recuerda iniciales, email, WhatsApp y nivel por deporte en `localStorage`, solo como comodidad.
+- El navegador recuerda iniciales, email, WhatsApp, rama, intención y nivel por deporte en `localStorage`, solo como comodidad.
 - **WhatsApp oculto (2026-11-14):**
   - El campo WhatsApp del formulario solo aparece si el administrador activa "Pedir el WhatsApp de los jugadores" en Configuración › Opciones (ajuste `whatsapp_contact`, que llega al sitio en `GET /api/today`). Apagado (por defecto), el servidor además descarta el número y el aviso aunque lleguen. Activado, el número se usa para el enlace `wa.me` entre compañeros confirmados.
   - La casilla "Avísenme también por WhatsApp" sigue oculta aunque el campo esté activo, porque la etapa 6 no está implementada; se muestra con `WHATSAPP_NOTICES = true` al inicio de `public/app.js` (y el campo activo). La base, el servidor y el perfil de cuentas ya la soportan.
@@ -248,7 +250,7 @@ npm run check        # genera tipos (wrangler types) y revisa con tsc
 - Las pruebas usan el runner de Node (`node --test`) y SQLite incorporado (`node:sqlite`), sin dependencias extra. `test/helpers/db.ts` imita la API de D1 (incluido `batch` transaccional) y aplica las migraciones reales.
 - Los imports entre archivos TypeScript llevan extensión `.ts` para que Node los ejecute directamente. `tsc` revisa `src/`; las pruebas no se revisan con `tsc` (no hay tipos de Node instalados).
 
-- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0012`.
+- La base remota `peloteo` ya existe (región ENAM) y su ID está en `wrangler.jsonc`. Migraciones remotas: `npx wrangler d1 migrations apply peloteo --remote`. La base remota tiene aplicadas hasta `0013`.
 - La base local se identifica por el `database_id`: si cambia, queda una base local vacía y hay que volver a `npm run db:migrate`.
 - Despliegue: automático con Workers Builds en cada push a `main` (aparece como check "Workers Builds: peloteo" en GitHub). Hacer push equivale a desplegar en producción. Despliegue manual: `npx wrangler deploy`. Dirección pública: https://peloteo.cl (también responde https://peloteo.peloteo.workers.dev).
 - Las migraciones no se aplican solas: aplicar las nuevas a la base remota antes del push que trae el código que las necesita.

@@ -172,6 +172,8 @@ export async function getPublicSport(db: Db, sportId: string): Promise<(PublicSp
 export interface MyPlayer {
   initials: string;
   level: number;
+  rama: string | null;
+  intent: string | null;
   me: boolean;
   /** Solo si el encuentro está confirmado. */
   email?: string;
@@ -241,11 +243,11 @@ async function toMyGames(
   const who = asWho(visitor);
   const { results: players } = await db
     .prepare(
-      `SELECT game_id, initials, level, email, whatsapp, visitor_id, user_id FROM players
+      `SELECT game_id, initials, level, rama, intent, email, whatsapp, visitor_id, user_id FROM players
        WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`,
     )
     .bind(...rows.map((r) => r.id))
-    .all<{ game_id: string; initials: string; level: number; email: string; whatsapp: string | null; visitor_id: string; user_id: string | null }>();
+    .all<{ game_id: string; initials: string; level: number; rama: string | null; intent: string | null; email: string; whatsapp: string | null; visitor_id: string; user_id: string | null }>();
   return rows.map((g) => {
     const own = players.filter((p) => p.game_id === g.id);
     const iAmIn = own.some((p) => isMine(p, who));
@@ -266,6 +268,8 @@ async function toMyGames(
       players: own.map((p) => ({
         initials: p.initials,
         level: p.level,
+        rama: p.rama,
+        intent: p.intent,
         me: isMine(p, who),
         ...(showContacts ? { email: p.email, whatsapp: p.whatsapp } : {}),
       })),
@@ -343,7 +347,7 @@ export interface OpenGame {
   accepted_levels: number[];
   sport: { id: string; name: string; key: string };
   venue: { id: string; name: string };
-  players: { initials: string; level: number }[];
+  players: { initials: string; level: number; rama: string | null; intent: string | null }[];
   /** Tiene un cupo de este visitante (o cuenta): se muestra, pero no puede sumarse. */
   mine: boolean;
 }
@@ -412,9 +416,9 @@ export async function listOpenBlock(
   const rows = (await openRows(db, date, date, visitorId, now, sport)).filter((g) => halfOf(g.time) === half);
   if (rows.length === 0) return [];
   const { results: players } = await db
-    .prepare(`SELECT game_id, initials, level FROM players WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`)
+    .prepare(`SELECT game_id, initials, level, rama, intent FROM players WHERE game_id IN (${placeholders(rows.length)}) ORDER BY rowid`)
     .bind(...rows.map((r) => r.id))
-    .all<{ game_id: string; initials: string; level: number }>();
+    .all<{ game_id: string; initials: string; level: number; rama: string | null; intent: string | null }>();
   return rows.map((g) => ({
     id: g.id,
     date: g.date,
@@ -424,7 +428,7 @@ export async function listOpenBlock(
     accepted_levels: parseIntList(g.accepted_levels, 1, 5),
     sport: { id: g.sport_id, name: g.sport_name, key: sportKey(g.sport_name) },
     venue: { id: g.venue_id, name: g.venue_name },
-    players: players.filter((p) => p.game_id === g.id).map(({ initials, level }) => ({ initials, level })),
+    players: players.filter((p) => p.game_id === g.id).map(({ initials, level, rama, intent }) => ({ initials, level, rama, intent })),
     mine: !!g.mine,
   }));
 }

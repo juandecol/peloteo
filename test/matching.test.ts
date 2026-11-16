@@ -24,6 +24,8 @@ const me = (over: Partial<PlayerInput> = {}): PlayerInput => ({
   initials: "mt",
   level: 3,
   email: "MT@Example.com ",
+  rama: "masculina",
+  intent: "diversion",
   ...over,
 });
 
@@ -65,10 +67,10 @@ async function fullTenis(db: TestDb, time: string, v1: string, v2: string) {
 
 test("validación: normaliza iniciales, email y WhatsApp", () => {
   const p = validatePlayer(
-    { initials: "j.p.", level: "2", email: " JP@Mail.CL", whatsapp: "+56 9 1234 5678", whatsapp_opt_in: true },
+    { initials: "j.p.", level: "2", email: " JP@Mail.CL", whatsapp: "+56 9 1234 5678", whatsapp_opt_in: true, rama: "femenina", intent: "competitivo" },
     [1, 2, 3],
   );
-  assert.deepEqual(p, { initials: "JP", level: 2, email: "jp@mail.cl", whatsapp: "+56912345678", whatsapp_opt_in: 1, lang: "es" });
+  assert.deepEqual(p, { initials: "JP", level: 2, email: "jp@mail.cl", whatsapp: "+56912345678", whatsapp_opt_in: 1, lang: "es", rama: "femenina", intent: "competitivo" });
   // Idioma de los correos: "en" si se pide; cualquier otro valor, español.
   assert.equal(validatePlayer(me({ lang: "en" }), [3]).lang, "en");
   assert.equal(validatePlayer(me({ lang: "fr" }), [3]).lang, "es");
@@ -94,6 +96,38 @@ test("validación: rechaza datos inválidos con el campo correspondiente", () =>
   assert.equal(field(me({ email: "sin-arroba" })), "email");
   assert.equal(field(me({ whatsapp: "1234" })), "whatsapp");
   assert.equal(field(me()), null);
+});
+
+test("validación: rama e intención de juego son obligatorias y de una lista fija (2026-11-16)", () => {
+  const err = (input: PlayerInput) => {
+    try {
+      validatePlayer(input, ALL);
+      return null;
+    } catch (e) {
+      return [(e as MatchError).field, (e as MatchError).message];
+    }
+  };
+  assert.deepEqual(err(me({ rama: undefined })), ["rama", "Elige tu rama: masculina o femenina."]);
+  assert.deepEqual(err(me({ rama: "mixta" })), ["rama", "Elige tu rama: masculina o femenina."]);
+  assert.deepEqual(err(me({ intent: undefined })), ["intent", "Elige por qué juegas: diversión, salud o competitivo."]);
+  assert.deepEqual(err(me({ intent: "ganar" })), ["intent", "Elige por qué juegas: diversión, salud o competitivo."]);
+  for (const intent of ["diversion", "salud", "competitivo"]) {
+    for (const rama of ["masculina", "femenina"]) {
+      const p = validatePlayer(me({ rama, intent }), ALL);
+      assert.deepEqual([p.rama, p.intent], [rama, intent]);
+    }
+  }
+});
+
+test("rama: es informativa; un jugador de otra rama puede unirse (2026-11-16)", async () => {
+  const db = emptyGamesDb();
+  const a = await createGame(db, tenis({ player: me({ rama: "femenina", intent: "competitivo" }) }), "V-1", now);
+  const b = await joinGame(db, a.game.id, me({ initials: "RS", rama: "masculina", intent: "salud" }), "V-2", now);
+  assert.equal(b.game.status, "confirmado");
+  assert.deepEqual(
+    b.game.players.map((p) => [p.initials, p.rama, p.intent]),
+    [["MT", "femenina", "competitivo"], ["RS", "masculina", "salud"]],
+  );
 });
 
 test("validación: el nivel debe tener categoría en el deporte", () => {
@@ -259,8 +293,8 @@ test("unirse: al completarse se asigna la primera cancha libre y se confirma", a
   assert.equal(b.game.court_id, "C-T1SM1");
   assert.equal(b.game.missing, 0);
   assert.deepEqual(b.game.players, [
-    { initials: "MT", level: 3 },
-    { initials: "RS", level: 4 },
+    { initials: "MT", level: 3, rama: "masculina", intent: "diversion" },
+    { initials: "RS", level: 4, rama: "masculina", intent: "diversion" },
   ]);
   // Al completarse no se avisa "se sumó": basta "confirmado".
   assert.deepEqual(b.notices, [
@@ -543,7 +577,7 @@ test("privacidad: las respuestas públicas solo traen iniciales y nivel", async 
     assert.ok(!text.includes("V-1"), text);
     assert.ok(!text.includes(a.cancel_token), text);
   }
-  assert.deepEqual(Object.keys(found[0]!.players[0]!).sort(), ["initials", "level"]);
+  assert.deepEqual(Object.keys(found[0]!.players[0]!).sort(), ["initials", "intent", "level", "rama"]);
 });
 
 // ---------------------------------------------------------------

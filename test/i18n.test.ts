@@ -85,6 +85,8 @@ const player = (initials: string, extra: Record<string, unknown> = {}) => ({
   initials,
   level: 3,
   email: initials.toLowerCase() + "@example.com",
+  rama: "femenina",
+  intent: "salud",
   ...extra,
 });
 const openTenis = (initials: string, extra: Record<string, unknown> = {}) => ({
@@ -128,11 +130,11 @@ test("idioma: cada cupo guarda su idioma y cada jugador recibe el correo en el s
   const en = mail("EN");
   assert.equal(en.subject, "Match confirmed: Tennis, Tuesday, November 17 at 18:00");
   assert.match(en.text, /Your partners' contact details/i);
-  assert.match(en.text, /ES \(level 3\): es@example\.com/);
+  assert.match(en.text, /ES \(women's, plays for health, level 3\): es@example\.com/);
   assert.match(en.html, /<html lang="en">/);
   const es = mail("ES");
   assert.equal(es.subject, "Partido confirmado: Tenis, martes 17 de noviembre a las 18:00");
-  assert.match(es.text, /EN \(nivel 3\): en@example\.com/);
+  assert.match(es.text, /EN \(rama femenina, juega por salud, nivel 3\): en@example\.com/);
 });
 
 test("idioma: todos los avisos tienen versión en inglés, sin restos en español", async () => {

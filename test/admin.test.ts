@@ -164,6 +164,22 @@ test("sesión: logout la invalida en el servidor", async () => {
   assert.equal((await t.req("GET", "/admin/api/venues")).status, 401);
 });
 
+test("lugares: enlace de reservas en línea opcional, editable y validado (2026-11-16)", async () => {
+  const t = await ready();
+  const a = await t.req("POST", "/admin/api/venues", { name: "Club Test" });
+  assert.equal(a.status, 201, JSON.stringify(a.json));
+  assert.equal(a.json.venue?.booking_url ?? a.json.booking_url, "");
+  const id = a.json.venue?.id ?? a.json.id;
+  const bad = await t.req("PUT", `/admin/api/venues/${id}`, { name: "Club Test", booking_url: "javascript:alert(1)" });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.json.field, "booking_url");
+  const ok = await t.req("PUT", `/admin/api/venues/${id}`, { name: "Club Test", booking_url: "https://reservas.example.cl/club" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.json));
+  const list = (await t.req("GET", "/admin/api/venues")).json;
+  const venues = list.venues ?? list;
+  assert.equal(venues.find((v: { id: string }) => v.id === id).booking_url, "https://reservas.example.cl/club");
+});
+
 test("sin sesión, la configuración responde 401", async () => {
   const t = setup();
   const r = await t.req("GET", "/admin/api/venues");
@@ -384,7 +400,7 @@ test("configuración: un deporte se muestra a los jugadores solo si está visibl
   assert.ok(!(await names()).includes("Squash"));
 
   // Oculto no admite partidos nuevos.
-  const player = { initials: "AB", level: 1, email: "ab@example.com" };
+  const player = { initials: "AB", level: 1, email: "ab@example.com", rama: "femenina", intent: "salud" };
   await assert.rejects(
     createGame(t.db, { sport_id: s.json.id, capacity: 2, date: "2026-11-17", time: "08:00", accepted_levels: [1], player }, "V-1", t.now),
     (e: unknown) => e instanceof MatchError && e.code === "deporte_no_existe",
@@ -400,7 +416,7 @@ test("configuración: un deporte se muestra a los jugadores solo si está visibl
 // ---------------------------------------------------------------
 
 async function confirmedAt(t: ReturnType<typeof setup>, time = "18:00") {
-  const player = { initials: "MT", level: 3, email: "mt@example.com" };
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo" };
   const a = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time, accepted_levels: [3], player }, "V-1", t.now);
   return joinGame(t.db, a.game.id, player, "V-2", t.now);
 }
@@ -437,7 +453,7 @@ test("canchas: se bloquea un cambio que deja fuera un encuentro confirmado", asy
 
 test("canchas: los encuentros abiertos (sin cancha) no bloquean cambios", async () => {
   const t = await ready();
-  const player = { initials: "MT", level: 3, email: "mt@example.com" };
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo" };
   await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
   assert.equal((await t.req("PUT", "/admin/api/courts/C-T1SM1", { ...T1, status: "cerrada" })).status, 200);
 });
@@ -487,7 +503,7 @@ test("eliminar: sin encuentros futuros se elimina sin confirmación", async () =
 
 test("eliminar un lugar oculta sus deportes y canchas del público", async () => {
   const t = await ready();
-  const player = { initials: "MT", level: 3, email: "mt@example.com" };
+  const player = { initials: "MT", level: 3, email: "mt@example.com", rama: "masculina", intent: "competitivo" };
   const open = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-17", time: "18:00", accepted_levels: [3], player }, "V-1", t.now);
   const first = await t.req("DELETE", "/admin/api/venues/L-SM001");
   assert.equal(first.status, 409);
@@ -536,7 +552,7 @@ test("encuentros: eliminar todos borra los partidos de todos los lugares y depor
   const sent: { event: NoticeEvent; email: string; game: string }[] = [];
   const capture: Channel = { name: "captura", async send(event, player, game) { sent.push({ event, email: player.email, game: game.id }); } };
   const t = await ready(setup(emptyGamesDb(), [capture]));
-  const p = (initials: string) => ({ initials, level: 3, email: initials.toLowerCase() + "@example.com" });
+  const p = (initials: string) => ({ initials, level: 3, email: initials.toLowerCase() + "@example.com", rama: "masculina", intent: "diversion" });
   // Uno confirmado y uno abierto (tenis), uno de pádel, uno cancelado y uno pasado.
   const conf = await confirmedAt(t);
   const open = await createGame(t.db, { sport_id: "D-TEN01", capacity: 2, date: "2026-11-18", time: "18:00", accepted_levels: [3], player: p("AB") }, "V-3", t.now);

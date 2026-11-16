@@ -63,6 +63,8 @@ const player = (initials: string, level = 3, extra: Record<string, unknown> = {}
   initials,
   level,
   email: initials.toLowerCase() + "@example.com",
+  rama: "femenina",
+  intent: "salud",
   ...extra,
 });
 
@@ -181,7 +183,7 @@ test("flujo: abrir, otro jugador se une, se asigna cancha y ambos ven el contact
   assert.equal(g.status, "abierto");
   assert.equal(g.court, null);
   assert.deepEqual(g.accepted_levels, [2, 3, 4]);
-  assert.deepEqual(g.players, [{ initials: "MT", level: 3, me: true }]); // sin contacto mientras está abierto
+  assert.deepEqual(g.players, [{ initials: "MT", level: 3, rama: "femenina", intent: "salud", me: true }]); // sin contacto mientras está abierto
   assert.equal(g.can_cancel, true);
 
   // Un tercero ve el partido en el día y en la búsqueda, solo con iniciales y nivel.
@@ -207,8 +209,8 @@ test("flujo: abrir, otro jugador se une, se asigna cancha y ambos ven el contact
   assert.equal(jg.status, "confirmado");
   assert.equal(jg.court.name, "Cancha 1");
   assert.deepEqual(jg.players, [
-    { initials: "MT", level: 3, me: false, email: "mt@example.com", whatsapp: "+56911112222" },
-    { initials: "RS", level: 4, me: true, email: "rs@example.com", whatsapp: null },
+    { initials: "MT", level: 3, rama: "femenina", intent: "salud", me: false, email: "mt@example.com", whatsapp: "+56911112222" },
+    { initials: "RS", level: 4, rama: "femenina", intent: "salud", me: true, email: "rs@example.com", whatsapp: null },
   ]);
 
   // A también ve el contacto de B en Mis partidos.
@@ -359,7 +361,7 @@ test("inicio: lista de un bloque con deporte, lugar, hora y niveles; sin contact
   assert.deepEqual(g.accepted_levels, [2, 3, 4]);
   assert.deepEqual(g.sport, { id: "D-TEN01", name: "Tenis", key: "tenis" });
   assert.equal(g.venue.id, "L-SM001");
-  assert.deepEqual(g.players, [{ initials: "MT", level: 3 }]);
+  assert.deepEqual(g.players, [{ initials: "MT", level: 3, rama: "femenina", intent: "salud" }]);
   assert.ok(!JSON.stringify(pm.json).includes("@"));
   assert.deepEqual((await b.req("GET", `/api/open/block?date=${DAY}&half=am`)).json, []);
   // Fuera de los 8 días o con datos inválidos: error.

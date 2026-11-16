@@ -41,10 +41,12 @@ export type GameStatus = "abierto" | "sin_cancha" | "confirmado";
 export type CourtMode = "reserva" | "coordinacion";
 export const courtMode = (value: unknown): CourtMode => (value === "coordinacion" ? "coordinacion" : "reserva");
 
-/** Jugador tal como se muestra públicamente: solo iniciales y nivel. */
+/** Jugador tal como se muestra públicamente: iniciales, rama, intención y nivel (sin contacto). */
 export interface PublicPlayer {
   initials: string;
   level: number;
+  rama: string | null;
+  intent: string | null;
 }
 
 /** Encuentro tal como se muestra públicamente. */
@@ -253,6 +255,8 @@ interface PlayerRow {
   game_id: string;
   initials: string;
   level: number;
+  rama: string | null;
+  intent: string | null;
   visitor_id: string;
   user_id: string | null;
 }
@@ -268,7 +272,7 @@ export async function toPublicGames(
   const ids = rows.map((r) => r.id);
   const { results: players } = await db
     .prepare(
-      `SELECT game_id, initials, level, visitor_id, user_id FROM players
+      `SELECT game_id, initials, level, rama, intent, visitor_id, user_id FROM players
        WHERE game_id IN (${placeholders(ids.length)})
        ORDER BY rowid`,
     )
@@ -284,7 +288,7 @@ export async function toPublicGames(
       capacity: g.capacity,
       accepted_levels: parseIntList(g.accepted_levels, 1, 5),
       status: g.status,
-      players: own.map((p) => ({ initials: p.initials, level: p.level })),
+      players: own.map((p) => ({ initials: p.initials, level: p.level, rama: p.rama, intent: p.intent })),
       missing: Math.max(0, g.capacity - own.length),
       mine: own.some((p) => isMine(p, who)),
     };

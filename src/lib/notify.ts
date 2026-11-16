@@ -29,6 +29,9 @@ export interface NoticePlayer {
   id: string;
   initials: string;
   level: number;
+  /** Rama e intención (2026-11-16); nulas en cupos anteriores. */
+  rama?: string | null;
+  intent?: string | null;
   email: string;
   whatsapp: string | null;
   whatsapp_opt_in: number;
@@ -152,7 +155,7 @@ export async function loadNoticeGame(db: Db, gameId: string): Promise<NoticeGame
   if (!game) return null;
   const { results: players } = await db
     .prepare(
-      `SELECT id, initials, level, email, whatsapp, whatsapp_opt_in, cancel_token, lang FROM players
+      `SELECT id, initials, level, rama, intent, email, whatsapp, whatsapp_opt_in, cancel_token, lang FROM players
        WHERE game_id = ? ORDER BY rowid`,
     )
     .bind(gameId)
