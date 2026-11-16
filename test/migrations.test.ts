@@ -81,3 +81,9 @@ test("migración 0015: los lugares parten en orden 0 (entre 0 y 999) y visibles"
   assert.equal(db.count("SELECT count(*) AS n FROM venues WHERE sort_order <> 0"), 0);
   assert.throws(() => db.exec("UPDATE venues SET sort_order = 1000 WHERE id = 'L-SM001'"), /CHECK constraint failed/);
 });
+
+test("migración 0016: los lugares parten públicos; privado solo 0 o 1", () => {
+  const db = new TestDb();
+  assert.equal(db.count("SELECT count(*) AS n FROM venues WHERE private <> 0"), 0);
+  assert.throws(() => db.exec("UPDATE venues SET private = 2 WHERE id = 'L-SM001'"), /CHECK constraint failed/);
+});

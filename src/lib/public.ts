@@ -222,7 +222,8 @@ export interface MyGame {
   accepted_levels: number[];
   missing: number;
   sport: { id: string; name: string };
-  venue: { name: string; address: string; maps_url: string };
+  /** private: club privado, solo para socios (2026-11-16). */
+  venue: { name: string; address: string; maps_url: string; private: boolean };
   court: { name: string; surface: string; notes: string; maps_url: string } | null;
   players: MyPlayer[];
   can_cancel: boolean;
@@ -240,6 +241,7 @@ interface MyGameRow {
   venue_name: string;
   venue_address: string;
   venue_maps: string;
+  venue_private: number;
   court_name: string | null;
   court_surface: string | null;
   court_notes: string | null;
@@ -251,7 +253,7 @@ async function myGameRows(db: Db, where: string, params: unknown[]): Promise<MyG
     .prepare(
       `SELECT g.id, g.date, g.time, g.status, g.capacity, g.accepted_levels,
               s.id AS sport_id, s.name AS sport_name,
-              v.name AS venue_name, v.address AS venue_address, v.maps_url AS venue_maps,
+              v.name AS venue_name, v.address AS venue_address, v.maps_url AS venue_maps, v.private AS venue_private,
               c.name AS court_name, c.surface AS court_surface, c.notes AS court_notes, c.maps_url AS court_maps
        FROM games g
        JOIN sports s ON s.id = g.sport_id
@@ -294,7 +296,7 @@ async function toMyGames(
       accepted_levels: parseIntList(g.accepted_levels, 1, 5),
       missing: Math.max(0, g.capacity - own.length),
       sport: { id: g.sport_id, name: g.sport_name },
-      venue: { name: g.venue_name, address: g.venue_address, maps_url: g.venue_maps },
+      venue: { name: g.venue_name, address: g.venue_address, maps_url: g.venue_maps, private: g.venue_private === 1 },
       court: g.court_name
         ? { name: g.court_name, surface: g.court_surface ?? "", notes: g.court_notes ?? "", maps_url: g.court_maps ?? "" }
         : null,

@@ -536,3 +536,14 @@ test("lugares disponibles: solo visibles y con deportes; en el orden del adminis
   assert.equal(no.status, 404);
   assert.equal((await w.browser().req("POST", `/api/games/${g.id}/join`, { player: player("RS") })).status, 200);
 });
+
+test("partido publicado y Mis partidos indican si el lugar es un club privado (2026-11-16)", async () => {
+  const w = world();
+  const a = w.browser();
+  assert.equal((await a.req("POST", "/api/games", openTenis("MT"))).json.game.venue.private, false);
+  w.db.exec("UPDATE venues SET private = 1 WHERE id = 'L-SM001'");
+  const g = (await w.browser().req("POST", "/api/games", { ...openTenis("RS"), time: "19:00" })).json.game;
+  assert.equal(g.venue.private, true);
+  assert.equal(g.venue.name, "Country Club Santa Martina");
+  assert.ok(((await a.req("GET", "/api/me/games")).json as any[]).every((x) => x.venue.private === true));
+});

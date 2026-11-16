@@ -472,3 +472,6 @@ legend.f{font-weight:700;font-size:.9rem;margin-top:.9rem;padding:0}
 .hero{min-height:13rem}
 /* Borde gris medio-oscuro del héroe, para separarlo del fondo claro (2026-11-16). */
 .hero{border:1px solid #5F6B65}
+
+/* Aviso de relación con el lugar y club privado al publicar o sumarse (2026-11-16). */
+.venue-note{border-left:3px solid var(--line);padding:.35rem 0 .35rem .7rem;margin:.6rem 0 .9rem}

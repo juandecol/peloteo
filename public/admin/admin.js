@@ -225,7 +225,7 @@
   }
 
   // Lugar visible u oculto para los jugadores (2026-11-16).
-  const venueTag = (v) => (v.visible === false ? '<span class="tag off">Oculto</span>' : '<span class="tag ok">Visible</span>');
+  const venueTag = (v) => (v.visible === false ? '<span class="tag off">Oculto</span>' : '<span class="tag ok">Visible</span>') + (v.private ? ' <span class="tag">Privado</span>' : '');
 
   function vVenueForm() {
     const ve = S.venueId ? S.venue : null;
@@ -237,6 +237,8 @@
       '<p id="vb-h" class="small muted">Página del club donde se reserva la cancha. Por ahora solo se guarda; más adelante se mostrará a los jugadores.</p>' +
       '<div class="checks"><label><input type="checkbox" name="visible" value="1"' + (!ve || ve.visible !== false ? ' checked' : '') + '>Visible para los jugadores</label></div>' +
       '<p class="small muted">Desmárcalo para preparar el lugar sin que aparezca en el sitio y publicarlo después. Aunque esté marcado, solo aparece cuando tiene al menos un deporte visible con canchas operativas. Los partidos ya abiertos siguen su curso.</p>' +
+      '<div class="checks"><label><input type="checkbox" name="private" value="1"' + (ve && ve.private ? ' checked' : '') + '>Club privado (solo socios y sus invitados)</label></div>' +
+      '<p class="small muted">Al publicar o sumarse a un partido aquí, se avisa que es un club privado, que solo pueden jugar sus socios y sus invitados, y que reservar en peloteo.cl no garantiza el acceso.</p>' +
       '<label class="f" for="vo">Orden en el selector</label><input id="vo" name="sort_order" type="number" inputmode="numeric" min="0" max="999" step="1" style="max-width:8rem" value="' + (ve ? ve.sort_order || 0 : 0) + '" aria-describedby="vo-h">' +
       '<p id="vo-h" class="small muted">Número entero de 0 a 999: el menor aparece primero en el selector de lugares del sitio. Si dos lugares tienen el mismo número, se ordenan alfabéticamente.</p>' +
       venueHoursFields(ve ? ve.hours : '') +
@@ -584,7 +586,7 @@
     async venue(d) {
       const f = document.querySelector('form[data-f="venue"]');
       const val = (sel) => { const el = f.querySelector(sel); return el ? el.value : ''; };
-      d = Object.assign({}, d, { visible: (d.visible || []).length > 0, hours: [0, 1, 2, 3, 4, 5, 6].map((n) => ((d.hours || []).includes(n) ? [val('[data-hopen="' + n + '"]'), val('[data-hclose="' + n + '"]')] : null)) });
+      d = Object.assign({}, d, { visible: (d.visible || []).length > 0, private: (d.private || []).length > 0, hours: [0, 1, 2, 3, 4, 5, 6].map((n) => ((d.hours || []).includes(n) ? [val('[data-hopen="' + n + '"]'), val('[data-hclose="' + n + '"]')] : null)) });
       const r = S.venueId ? await api('PUT', '/admin/api/venues/' + S.venueId, d) : await api('POST', '/admin/api/venues', d);
       if (!r.ok) { fail(r); return; }
       toast('Lugar guardado.'); S.venue = r.data; await go('venue', { venueId: r.data.id });

@@ -477,7 +477,12 @@
       : g.status === 'sin_cancha' ? L('Se completó, pero ya no quedan canchas libres a esa hora. Les avisaremos para elegir otro turno.', "It filled up, but there are no free courts left at that time. We'll let you know so you can pick another time.")
       : coord() ? L('Cuando se complete, te avisamos y les pasamos el contacto de todos para que reserven la cancha con el club.', "When it fills up, we'll let you know and share everyone's contact details so you can book the court with the club.")
       : L('Cuando se complete, les asignamos la primera cancha libre de ese turno y te avisamos.', "When it fills up, we'll assign the first free court at that time and let you know.");
-    return '<h1 class="h">' + title + '</h1><p>' + text + '</p>' + gameCard(g, false) +
+    // Relación con el lugar (2026-11-16): Peloteo no tiene relación con él; si es un club
+    // privado, solo juegan sus socios y agendar aquí no garantiza el acceso.
+    const venueNote = '<p class="small venue-note">' + L('peloteo.cl no tiene ninguna relación con ' + esc(g.venue.name) + '.', 'peloteo.cl has no relationship with ' + esc(g.venue.name) + '.') +
+      (g.venue.private ? ' ' + L('<b>' + esc(g.venue.name) + ' es un club privado</b>: para jugar ahí solo se permiten socios y sus invitados. Reservar en peloteo.cl no garantiza el acceso a los clubes privados que aparecen en la plataforma.',
+        '<b>' + esc(g.venue.name) + ' is a private club</b>: only members and their guests may play there. Booking on peloteo.cl does not guarantee access to the private clubs listed on the platform.') : '') + '</p>';
+    return '<h1 class="h">' + title + '</h1><p>' + text + '</p>' + venueNote + gameCard(g, false) +
       '<div class="actions"><button type="button" class="btn" data-a="go" data-v="mine">' + L('Ver mis partidos', 'See my matches') + '</button><button type="button" class="btn ghost" data-a="go" data-v="home">' + L('Agendar otro', 'Book another') + '</button></div>';
   }
 
@@ -652,7 +657,9 @@
         p('Peloteo no reserva canchas ni administra los lugares de juego. Los lugares, días, horarios y canchas que muestra el sitio son solo referenciales. Reservar la cancha con el lugar y cumplir sus reglas es responsabilidad de los jugadores.',
           'Peloteo does not book courts or run the venues. The venues, days, times and courts shown on the site are for reference only. Booking the court with the venue and following its rules is the players\' responsibility.') +
         p('Peloteo no se hace responsable del agendamiento de las canchas ni de las decisiones que adopten los lugares en que se acuerdan los partidos (por ejemplo, cerrar, cambiar sus horarios o no aceptar una reserva), ni de que los jugadores encuentren dónde jugar.',
-          'Peloteo is not responsible for booking courts or for the decisions made by the venues where matches are arranged (for example, closing, changing their hours or refusing a booking), nor for players finding a place to play.')) +
+          'Peloteo is not responsible for booking courts or for the decisions made by the venues where matches are arranged (for example, closing, changing their hours or refusing a booking), nor for players finding a place to play.') +
+        p('Peloteo no tiene ninguna relación con los lugares que aparecen en el sitio. Algunos son clubes privados, donde solo pueden jugar sus socios y sus invitados: agendar un partido en peloteo.cl no garantiza el acceso a ellos.',
+          'Peloteo has no relationship with the venues listed on the site. Some are private clubs where only members and their guests may play: scheduling a match on peloteo.cl does not guarantee access to them.')) +
       sec(3, L('Tus datos de contacto se comparten con quienes juegan contigo', 'Your contact details are shared with the people you play with'),
         p('Al anotarte en un partido aceptas que, cuando se confirme, la dirección de correo que ingresaste (y tu WhatsApp, si lo diste) se comparta por correo electrónico y en el sitio con las personas que acepten jugar ese partido contigo, para que se pongan de acuerdo. Antes de la confirmación, los demás solo ven tus iniciales, tu rama, tu intención de juego y tu nivel.',
           'By signing up for a match you agree that, once it is confirmed, the email address you entered (and your WhatsApp, if you gave it) will be shared by email and on the site with the people who agree to play that match with you, so you can get in touch. Before confirmation, others only see your initials, division, why you play and level.') +

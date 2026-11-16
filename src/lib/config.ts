@@ -145,6 +145,8 @@ export interface Venue {
   sort_order: number;
   /** Lo decide el administrador: si se ofrece a los jugadores (2026-11-16). */
   visible: boolean;
+  /** Club privado: solo pueden jugar sus socios (2026-11-16, informativo). */
+  private: boolean;
   sports: number;
   courts: number;
 }
@@ -152,13 +154,13 @@ export interface Venue {
 export async function listVenues(db: Db): Promise<Venue[]> {
   const { results } = await db
     .prepare(
-      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url, v.hours, v.sort_order, v.visible,
+      `SELECT v.id, v.name, v.address, v.maps_url, v.booking_url, v.hours, v.sort_order, v.visible, v.private,
               (SELECT count(*) FROM sports s WHERE s.venue_id = v.id AND s.deleted_at IS NULL) AS sports,
               (SELECT count(*) FROM courts c WHERE c.venue_id = v.id AND c.deleted_at IS NULL) AS courts
        FROM venues v WHERE v.deleted_at IS NULL ORDER BY v.sort_order, v.name COLLATE NOCASE, v.id`,
     )
-    .all<Omit<Venue, "visible"> & { visible: number }>();
-  return results.map((v) => ({ ...v, visible: v.visible === 1 }));
+    .all<Omit<Venue, "visible" | "private"> & { visible: number; private: number }>();
+  return results.map((v) => ({ ...v, visible: v.visible === 1, private: v.private === 1 }));
 }
 
 export async function getVenue(db: Db, id: string): Promise<Venue> {
@@ -201,6 +203,8 @@ function validateVenue(input: Record<string, unknown>) {
     sort_order: validateSortOrder(input.sort_order),
     // Sin el campo: visible al crear y sin cambios al editar.
     visible: typeof input.visible === "boolean" ? (input.visible ? 1 : 0) : null,
+    // Sin el campo: público al crear y sin cambios al editar.
+    private: typeof input.private === "boolean" ? (input.private ? 1 : 0) : null,
   };
 }
 
@@ -215,8 +219,13 @@ function validateSortOrder(v: unknown): number | null {
 export async function createVenue(db: Db, input: Record<string, unknown>): Promise<Venue> {
   const v = validateVenue(input);
   const id = newId("L");
-  await db.prepare("INSERT INTO venues (id, name, address, maps_url, booking_url, hours, sort_order, visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, v.name, v.address, v.maps_url, v.booking_url, v.hours ?? "", v.sort_order ?? 0, v.visible ?? 1).run();
+  await db
+    .prepare(
+      `INSERT INTO venues (id, name, address, maps_url, booking_url, hours, sort_order, visible, private)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(id, v.name, v.address, v.maps_url, v.booking_url, v.hours ?? "", v.sort_order ?? 0, v.visible ?? 1, v.private ?? 0)
+    .run();
   return getVenue(db, id);
 }
 
@@ -250,10 +259,10 @@ export async function updateVenue(db: Db, id: string, input: Record<string, unkn
   const r = await db
     .prepare(
       `UPDATE venues SET name = ?, address = ?, maps_url = ?, booking_url = ?, hours = ?, sort_order = COALESCE(?, sort_order),
-         visible = COALESCE(?, visible)
+         visible = COALESCE(?, visible), private = COALESCE(?, private)
        WHERE id = ? AND deleted_at IS NULL`,
     )
-    .bind(v.name, v.address, v.maps_url, v.booking_url, hours, v.sort_order, v.visible, id)
+    .bind(v.name, v.address, v.maps_url, v.booking_url, hours, v.sort_order, v.visible, v.private, id)
     .run();
   if (r.meta.changes === 0) throw new ConfigError("no_existe", "Ese lugar ya no existe.");
   return getVenue(db, id);

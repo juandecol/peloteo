@@ -806,3 +806,13 @@ test("lugares: visible para los jugadores; se crea oculto y se publica después 
   assert.equal((await t.req("PUT", `/admin/api/venues/${a.json.id}`, { name: "Club Futuro" })).json.visible, false);
   assert.equal((await t.req("PUT", `/admin/api/venues/${a.json.id}`, { name: "Club Futuro", visible: true })).json.visible, true);
 });
+
+test("lugares: club privado o público; público por defecto y sin cambios si falta el campo (2026-11-16)", async () => {
+  const t = await ready();
+  const a = await t.req("POST", "/admin/api/venues", { name: "Club Socios", private: true });
+  assert.equal(a.status, 201, JSON.stringify(a.json));
+  assert.equal(a.json.private, true);
+  assert.equal((await t.req("POST", "/admin/api/venues", { name: "Parque" })).json.private, false);
+  assert.equal((await t.req("PUT", `/admin/api/venues/${a.json.id}`, { name: "Club Socios" })).json.private, true);
+  assert.equal((await t.req("PUT", `/admin/api/venues/${a.json.id}`, { name: "Club Socios", private: false })).json.private, false);
+});
